@@ -1,0 +1,4 @@
+# Region hand-offs: a region splits itself, a region absorbs another, with real games, players and chunks.
+horizon-client game::regions::tests::a_region_whose_players_walked_apart_splits_itself_and_each_part_keeps_its_state lib daily resources
+horizon-client game::regions::tests::a_region_that_finds_no_spare_game_keeps_everything_and_asks_for_one lib daily resources
+horizon-client game::regions::tests::a_region_absorbed_by_another_hands_over_its_entities_players_chunks_and_sections lib daily resources

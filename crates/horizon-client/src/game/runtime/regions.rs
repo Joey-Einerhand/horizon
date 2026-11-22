@@ -507,6 +507,20 @@ struct Slot {
     terrain_wait: u32,
     /// The regions it split off, until the set takes them in.
     born: Vec<Born>,
+    /// Its players as `server-status` tells of them, and what it held, as of the last time the region was home.
+    status: Vec<AwayStatus>,
+    entities: usize,
+}
+
+/// A player away in a region, as `server-status` reports them: the supervisor asks every second, and a region
+/// that had to come home for each answer would never stay out.
+pub(super) struct AwayStatus {
+    pub name: String,
+    pub uuid: u128,
+    pub address: std::net::SocketAddr,
+    pub latency: Arc<std::sync::atomic::AtomicI32>,
+    pub dimension: String,
+    pub position: [f64; 3],
 }
 
 pub(super) struct AwayPlayer {
@@ -536,6 +550,8 @@ impl Slot {
             owed: false,
             terrain_wait: 0,
             born: Vec::new(),
+            status: Vec::new(),
+            entities: 0,
         }
     }
     /// Takes the game in if its thread finished (waiting until `until`, or for good when None); false while it
@@ -1568,6 +1584,9 @@ impl Game<'_> {
         // Native mods read the players away in a region from what it last reported.
         if self.lan.is_some() {
             for slot in set.games.iter_mut().filter(|s| !s.landed) {
+                if let Some(w) = slot.game.as_ref() {
+                    slot.entities = w.entity_count();
+                }
                 if let Some(shell) = slot.game.as_ref().and_then(|w| w.lan.as_ref()) {
                     slot.players = shell
                         .hub
@@ -1578,6 +1597,20 @@ impl Game<'_> {
                             id: g.entity_id as u32,
                             uuid: g.uuid,
                             sender: g.sender.clone(),
+                        })
+                        .collect();
+                    slot.status = shell
+                        .hub
+                        .guests
+                        .iter()
+                        .filter(|g| g.participates_online())
+                        .map(|g| AwayStatus {
+                            name: g.name.clone(),
+                            uuid: g.uuid,
+                            address: g.address,
+                            latency: Arc::clone(&g.latency),
+                            dimension: g.dimension.clone(),
+                            position: g.position,
                         })
                         .collect();
                 }
@@ -1944,6 +1977,34 @@ impl Game<'_> {
             .flat_map(|s| s.players.iter())
     }
 
+    /// The players away in a resident region, for `server-status`, as the region last reported them.
+    pub(super) fn away_status_players(&self) -> impl Iterator<Item = &AwayStatus> {
+        self.regions
+            .resident
+            .values()
+            .chain(self.regions.flight.iter().map(|(_, f)| &f.set))
+            .flat_map(|set| set.games.iter().filter(|s| !s.landed))
+            .flat_map(|s| s.status.iter())
+    }
+
+    /// The chunks and entities the resident regions of level `dim` hold, as they last reported them: what the
+    /// level in place lacks for `server-status` while they are away.
+    pub(super) fn resident_totals(&self, dim: Dim) -> (usize, usize) {
+        self.regions
+            .resident
+            .get(&dim)
+            .into_iter()
+            .chain(
+                self.regions
+                    .flight
+                    .iter()
+                    .filter(move |(d, _)| *d == dim)
+                    .map(|(_, f)| &f.set),
+            )
+            .flat_map(|set| set.games.iter().filter(|s| !s.landed))
+            .fold((0, 0), |(c, e), s| (c + s.chunks, e + s.entities))
+    }
+
     /// Queues `packet` for a player away in a region, for its next tick; false when `uuid` is not away.
     /// `horizon_only`: only a Horizon client gets it.
     pub(super) fn queue_for_away(
@@ -2269,7 +2330,10 @@ impl Game<'_> {
                 break;
             };
             match self.carve_into(dest, cut.area_of(g), &link) {
-                Ok(born) => report.born.push(born),
+                Ok(born) => {
+                    log::info!("regions: region {} split off region {}", link.id, born.id);
+                    report.born.push(born)
+                }
                 Err(dest) => {
                     link.spares.give(dest);
                     carved_all = false;
@@ -2478,6 +2542,7 @@ impl Game<'_> {
                 continue;
             };
             big.absorb_region(&mut small);
+            log::info!("regions: region {} merged into region {}", gone_slot.uid, slot.uid);
             set.shared.map.reassign(gone_slot.uid, slot.uid);
             slot.conns.append(&mut gone_slot.conns);
             slot.mail.append(&mut gone_slot.mail);

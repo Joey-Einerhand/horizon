@@ -51,7 +51,9 @@ impl Game<'_> {
             // players and chunks of every level: a player away in a resident region is not in the server's own
             // hub, so `list` and `status` counted none and `tp`, `kick` or `data get` found nobody. Every region
             // of every level comes home first, as it does for a line typed on the console.
-            if !request.line.trim().starts_with("server-events") {
+            // `server-status` is asked every second by the supervisor: it reads the regions' last reports
+            // instead (`away_status_players`), so a region stays out.
+            if !request.line.trim().starts_with("server-events") && request.line.trim() != "server-status" {
                 self.land_residents();
             }
             let reply = match request.line.trim().split_once(' ') {
@@ -101,20 +103,22 @@ impl Game<'_> {
     /// Each level's loaded chunks and entities (players and block entities apart), the level in place
     /// first: what the Prometheus text reports by dimension.
     fn status_levels(&self) -> Value {
+        let (lent_chunks, lent_entities) = self.resident_totals(self.dim);
         let mut levels = vec![json!({
             "dimension": self.dim.id(),
-            "chunks": self.world.chunks.len(),
-            "entities": self.entity_count(),
+            "chunks": self.world.chunks.len() + lent_chunks,
+            "entities": self.entity_count() + lent_entities,
         })];
         for dim in self.levels.parked_dims() {
             if let (Some(world), Some(entities)) = (
                 self.levels.parked_world(dim),
                 self.levels.parked_entity_count(dim),
             ) {
+                let (lent_chunks, lent_entities) = self.resident_totals(dim);
                 levels.push(json!({
                     "dimension": dim.id(),
-                    "chunks": world.chunks.len(),
-                    "entities": entities,
+                    "chunks": world.chunks.len() + lent_chunks,
+                    "entities": entities + lent_entities,
                 }));
             }
         }
@@ -123,7 +127,7 @@ impl Game<'_> {
 
     /// The entities of the level in place: mobs, items, orbs, projectiles, vehicles, falling blocks,
     /// hangings, armor stands, cushions, tridents, rockets and primed TNT.
-    fn entity_count(&self) -> usize {
+    pub(in crate::game) fn entity_count(&self) -> usize {
         self.mobs.iter().filter(|m| !m.removed).count()
             + self.dropped.len()
             + self.orbs.len()
@@ -167,6 +171,17 @@ impl Game<'_> {
                 .collect();
             (players, h.hub.lan.shared.max_players())
         });
+        let mut players: Vec<Value> = players;
+        players.extend(self.away_status_players().map(|p| {
+            player_status(
+                &p.name,
+                p.uuid,
+                &p.address.ip().to_string(),
+                p.latency.load(Ordering::Relaxed),
+                &p.dimension,
+                p.position,
+            )
+        }));
         json!({
             "tps": state.tps(),
             "target_tps": self.clock.rate(),
@@ -178,7 +193,7 @@ impl Game<'_> {
             },
             "players": players,
             "max_players": max_players,
-            "chunks": self.world.chunks.len(),
+            "chunks": self.world.chunks.len() + self.resident_totals(self.dim).0,
             "levels": self.status_levels(),
             "paused": state.paused,
         })
