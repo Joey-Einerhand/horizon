@@ -6518,11 +6518,13 @@ mod burn_and_rose_tests {
     #[test]
     fn a_lava_cauldron_burns_the_mob_inside_it() {
         let build = build_with("minecraft:lava_cauldron");
+        let mut test_level = crate::health::TestLevel::new(0);
+        let level = &mut test_level.level();
         crate::mobs::world::with_built_test_world(&[], build, |w, types| {
             let mut m = golem(types);
             let mut events = Vec::new();
             let start = m.health;
-            base_tick(&mut m, w, &mut events);
+            base_tick(&mut m, w, level, &mut events);
             assert_eq!(m.health, start - 4.0, "one lava hit");
             assert_eq!(m.fire_ticks, 300, "ignited to the full time");
         });
