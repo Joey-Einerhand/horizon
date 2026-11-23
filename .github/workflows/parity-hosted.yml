@@ -651,6 +651,11 @@ jobs:
           python-version: '3.13'
       - name: Tools from the runner
         run: bash tools/ci/runner-env.sh
+      # The crates Cargo.lock names, before any harness: a fresh runner has none, and the harnesses that run cargo
+      # --offline (mob_discard, nbt_path_reader, snbt_unicode) otherwise fail in a second unless another harness has
+      # fetched them first (mob_discard on 2026-11-23). Fetching runs no build script; ~/.cargo is never sealed.
+      - name: The crates, before the harnesses
+        run: cargo fetch --locked
       # A checkout dates every file now: files whose Git object is the one the restored build saw get that build's
       # dates back (as tools/ci/build_folder.sh does for the sticky disks), so Cargo rebuilds only what changed.
       - name: Source dates of the restored build
