@@ -940,6 +940,21 @@ impl Hub {
         out
     }
 
+    /// The guest on `conn` taken out for a region's hub, with the roster entry and scoreboard view the other hubs
+    /// keep for them ([`Hub::split_guests`] does the same for every region at once).
+    pub fn lend_guest(&mut self, conn: u32) -> Vec<Guest> {
+        let out = self.hand_guests(&[conn]);
+        for g in &out {
+            if g.placed && g.participates_online() && !self.lan.shared.roster_has(g.conn) {
+                self.publish_guest(g);
+            }
+            self.lan
+                .shared
+                .roster_lend_scoreboard(g.conn, g.scoreboard.clone());
+        }
+        out
+    }
+
     /// The guests on `conns` taken out, to hand to another region's hub: a region splitting one off.
     pub fn hand_guests(&mut self, conns: &[u32]) -> Vec<Guest> {
         let mut out = Vec::new();
@@ -1195,6 +1210,23 @@ impl Hub {
         self.lan
             .shared
             .roster_sync_scoreboard(|c| self.guest(c).is_some(), view);
+    }
+    /// A player of another hub (a region holds them), by name (any case) or by UUID: their UUID and name.
+    pub fn roster_other_player(
+        &self,
+        name: Option<&str>,
+        uuid: Option<u128>,
+    ) -> Option<(u128, String)> {
+        self.lan
+            .shared
+            .roster_others(|c| self.guest(c).is_some())
+            .into_iter()
+            .find_map(|e| {
+                let called = e.info.name.as_deref().unwrap_or_default();
+                let hit =
+                    name.is_some_and(|n| n.eq_ignore_ascii_case(called)) || uuid == Some(e.uuid);
+                hit.then(|| (e.uuid, called.to_owned()))
+            })
     }
     /// Whether players are in other hubs.
     pub fn has_roster_others(&self) -> bool {

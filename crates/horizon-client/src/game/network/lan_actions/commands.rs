@@ -124,6 +124,7 @@ impl Game<'_> {
     /// The guests' queued commands, run with the hub in `self.lan` so that
     /// they reach the other players too (`/give Bob`, `/tp Bob`, `/kick`).
     pub(in crate::game) fn run_guest_commands(&mut self) {
+        self.retry_deferred_commands();
         loop {
             let Some(host) = self.lan.as_mut() else {
                 return;
@@ -151,6 +152,7 @@ impl Game<'_> {
         let swap = self.enter_guest(c.conn)?;
         self.chat_capture = Some(Vec::new());
         let level = std::mem::replace(&mut self.ui.registries.permission, c.permission);
+        self.regions.deferrable = !c.quiet && crate::game::region_tasks::is_teleport_command(&c.command);
         let ok = if self.perform_native_command(c.conn, c.permission, &c.command) {
             true
         } else if c.quiet {
@@ -159,8 +161,15 @@ impl Game<'_> {
             self.run_command(&c.command)
         };
         self.ui.registries.permission = level;
+        self.regions.deferrable = false;
         let mut lines = self.chat_capture.take().unwrap_or_default();
         self.leave_guest(swap);
+        // The command asked another region something: it is held, and run again from the start once the answer
+        // is in. What its failed run said is not told.
+        if std::mem::take(&mut self.regions.command_deferred) {
+            self.hold_command(c);
+            return Some((true, Vec::new()));
+        }
         if std::mem::take(&mut self.save_after_guest_turn) {
             lines.push(self.save_all_reply());
         }

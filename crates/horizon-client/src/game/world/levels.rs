@@ -1249,6 +1249,11 @@ impl Game<'_> {
         if server {
             self.run_requested_saves();
         }
+        // What the regions asked of the server thread's own game, and the players they handed off for it.
+        if server && running.is_some() {
+            self.run_server_tasks();
+            self.deliver_server_handoffs();
+        }
         // A config edited while the server is paused (empty) still reloads.
         // The parts outside every level get spans of their own, so that a slow
         // tick's line and `horizon-report` say when a mod's tick hook took it.

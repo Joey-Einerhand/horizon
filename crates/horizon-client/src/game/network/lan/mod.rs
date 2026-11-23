@@ -53,6 +53,17 @@ pub struct LanSettings {
     pub force_game_mode: bool,
 }
 
+/// A player on their way from one game to another, with what their host keeps for them
+/// ([`LanHost::take_player_kit`], [`LanHost::give_player_kit`]).
+pub(super) struct PlayerKit {
+    pub guest: horizon_client::lan::guest::Guest,
+    play: Option<super::lan_actions::GuestPlay>,
+    menus: Option<super::lan_menus::GuestMenus>,
+    pose: Option<horizon_client::pose::Pose>,
+    mob_player: Option<(u32, u32)>,
+    mob_state: Option<(u32, (i32, bool, Option<i32>))>,
+}
+
 pub(super) struct LanHost {
     pub hub: Hub,
     /// The mods heard that everyone still here leaves with the server.
@@ -84,6 +95,10 @@ pub(super) struct LanHost {
     /// Guests' commands waiting for the hub to be back in `self.lan`, where
     /// a command can reach every player (game/network/lan_actions/commands.rs).
     pub commands: Vec<super::lan_actions::GuestCommand>,
+    /// Commands that asked another region for something and wait for its answer (`/tp <player>` for a player
+    /// in another region), with the server tick each first asked in and the one it last ran in: run again once
+    /// per tick until answered (game/runtime/region_tasks.rs).
+    pub deferred_commands: Vec<(super::lan_actions::GuestCommand, u64, u64)>,
     /// Mods' quiet commands waiting to run a few a tick (game/network/lan_quiet.rs).
     pub quiet: std::collections::VecDeque<super::lan_quiet::QuietBatch>,
     /// Far terrain sampled for Horizon clients (game/network/lan_far.rs); None when
@@ -124,6 +139,7 @@ impl LanHost {
             waypoint_dead: Default::default(),
             border_sent: None,
             commands: Vec::new(),
+            deferred_commands: Vec::new(),
             quiet: Default::default(),
             far: None,
             native_commands_sent: self.native_commands_sent,
@@ -173,6 +189,48 @@ impl LanHost {
                 region_states.insert(*id, s);
             }
         }
+    }
+
+    /// The player on `conn` with what this host keeps for them, taken out to hand to another game's host (a
+    /// teleport into another region): the other half of [`LanHost::give_player_kit`]. None when no such player
+    /// is here.
+    pub(super) fn take_player_kit(&mut self, conn: u32, dim: super::Dim) -> Option<PlayerKit> {
+        let guest = self.hub.hand_guests(&[conn]).pop()?;
+        let id = guest.entity_id as u32;
+        Some(PlayerKit {
+            play: self.play.remove(&conn),
+            menus: self.menus.remove(&conn),
+            pose: self.poses.remove(&conn),
+            mob_player: self.mob_players.remove(&id).map(|c| (id, c)),
+            mob_state: self
+                .mob_state
+                .get_mut(&dim)
+                .and_then(|s| s.remove(&id))
+                .map(|s| (id, s)),
+            guest,
+        })
+    }
+
+    /// A player taken out of another game's host by [`LanHost::take_player_kit`], joined to this one's.
+    pub(super) fn give_player_kit(&mut self, kit: PlayerKit, dim: super::Dim) {
+        let conn = kit.guest.conn;
+        if let Some(p) = kit.play {
+            self.play.insert(conn, p);
+        }
+        if let Some(m) = kit.menus {
+            self.menus.insert(conn, m);
+        }
+        if let Some(p) = kit.pose {
+            self.poses.insert(conn, p);
+        }
+        if let Some((id, c)) = kit.mob_player {
+            self.mob_players.insert(id, c);
+        }
+        if let Some((id, s)) = kit.mob_state {
+            self.mob_state.entry(dim).or_default().insert(id, s);
+        }
+        self.hub.guests.push(kit.guest);
+        self.hub.restore_guest_order();
     }
 
     /// Region host `r`, merged into this region's: its players and what is kept for them and their mobs.
@@ -1429,6 +1487,7 @@ impl Game<'_> {
             waypoint_dead: Default::default(),
             border_sent: None,
             commands: Vec::new(),
+            deferred_commands: Vec::new(),
             quiet: std::collections::VecDeque::new(),
             far,
             native_commands_sent: None,
@@ -3923,6 +3982,7 @@ mod tests {
             waypoint_dead: Default::default(),
             border_sent: None,
             commands: Default::default(),
+            deferred_commands: Default::default(),
             quiet: Default::default(),
             far: None,
             native_commands_sent: None,
@@ -6330,6 +6390,7 @@ mod merchant_packet_tests {
                 waypoint_dead: Default::default(),
                 border_sent: None,
                 commands: Default::default(),
+                deferred_commands: Default::default(),
                 quiet: Default::default(),
                 far: None,
                 native_commands_sent: None,

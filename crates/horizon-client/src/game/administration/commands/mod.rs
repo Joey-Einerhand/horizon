@@ -1900,19 +1900,17 @@ impl Game<'_> {
             pos
         })
     }
-    fn cmd_teleport(&mut self, id: &str, ctx: &Context) -> R<i32> {
-        let targets = if id.starts_with("teleport.targets") {
-            without_knots(self.entities(ctx, "targets", false)?)?
-        } else {
-            vec![
-                self.source_entity()
-                    .ok_or_else(|| err("permissions.requires.entity", &[]))?,
-            ]
-        };
-        if id.ends_with("destination") {
-            let dest = self.entities(ctx, "destination", false)?[0];
-            let (pos, level, rotation, destination_name) = self
-                .in_target_level(dest, |game| {
+    /// Where `/tp <targets> <destination>` goes: the destination entity's place, level, rotation and name. A
+    /// player in another region is asked of that region first (game/runtime/region_tasks.rs): the command is held
+    /// and run again once it has answered.
+    fn teleport_destination(
+        &mut self,
+        ctx: &Context,
+    ) -> R<([f64; 3], Dim, Option<[f32; 2]>, Text)> {
+        match self.entities(ctx, "destination", false) {
+            Ok(found) => {
+                let dest = found[0];
+                self.in_target_level(dest, |game| {
                     (
                         game.target_position(dest).unwrap_or(game.source_position()),
                         game.target_level(dest),
@@ -1920,7 +1918,89 @@ impl Game<'_> {
                         game.target_name(dest),
                     )
                 })
-                .ok_or_else(|| err("argument.entity.notfound.entity", &[]))?;
+                .ok_or_else(|| err("argument.entity.notfound.entity", &[]))
+            }
+            Err(notfound) => {
+                let place = self.remote_destination(ctx)?.ok_or(notfound)?;
+                Ok((
+                    place.position,
+                    place.dim,
+                    Some(place.rotation.map(wrap_degrees)),
+                    Text::literal(place.name),
+                ))
+            }
+        }
+    }
+    /// The place of the player a `destination` argument names when they are in another region, asked of it:
+    /// None when the argument names nobody there (or the answer never came).
+    fn remote_destination(&mut self, ctx: &Context) -> R<Option<super::region_tasks::Place>> {
+        use super::region_tasks::Answer;
+        let Some(Arg::Entity(selector)) = ctx.get("destination") else {
+            return Ok(None);
+        };
+        let Some((uuid, _)) = self.remote_player_of(selector) else {
+            return Ok(None);
+        };
+        // Only a command that can be run again from the start asks: a function's lines or an `execute` chain
+        // would repeat what they did before the teleport.
+        if !self.regions.deferrable {
+            return Ok(None);
+        }
+        match self.place_of_remote(uuid) {
+            Answer::Ready(place) => Ok(Some(place)),
+            Answer::Asked => {
+                self.defer_command();
+                Err(err("command.deferred", &[]))
+            }
+            Answer::Gone => Ok(None),
+        }
+    }
+    /// `/tp <player in another region> <destination>`: the player's own region moves them, at its next tick.
+    fn teleport_remote_subject(&mut self, ctx: &Context, notfound: CommandError) -> R<i32> {
+        let Some(Arg::Entity(selector)) = ctx.get("targets") else {
+            return Err(notfound);
+        };
+        let Some((uuid, name)) = self.remote_player_of(selector) else {
+            return Err(notfound);
+        };
+        let (position, dim, rotation, destination_name) = self.teleport_destination(ctx)?;
+        self.regions.tasks.entity(
+            uuid,
+            move |owner| {
+                owner.teleport_player_task(
+                    uuid,
+                    super::region_tasks::Arrival {
+                        dim,
+                        position,
+                        rotation,
+                    },
+                );
+            },
+            None,
+        );
+        self.feedback(Text::translate(
+            "commands.teleport.success.entity.single",
+            &[Text::literal(name), destination_name],
+        ));
+        Ok(1)
+    }
+    fn cmd_teleport(&mut self, id: &str, ctx: &Context) -> R<i32> {
+        let targets = if id.starts_with("teleport.targets") {
+            match self.entities(ctx, "targets", false) {
+                Ok(found) => without_knots(found)?,
+                Err(notfound) if id.ends_with("destination") => {
+                    return self.teleport_remote_subject(ctx, notfound);
+                }
+                Err(notfound) => return Err(notfound),
+            }
+        } else {
+            vec![
+                self.source_entity()
+                    .ok_or_else(|| err("permissions.requires.entity", &[]))?,
+            ]
+        };
+        if id.ends_with("destination") {
+            let (pos, level, rotation, destination_name) = self.teleport_destination(ctx)?;
             let target_name = (targets.len() == 1).then(|| {
                 self.in_target_level(targets[0], |game| game.target_name(targets[0]))
                     .unwrap_or_else(Text::empty)

@@ -251,7 +251,7 @@ impl Regions {
 
     /// The one region that owns `area`, split out alone: the layout of a region that is lent again, or carved out
     /// of another (`band`: see [`Regions::band`]).
-    fn for_area(area: &Area, band: usize) -> Self {
+    pub(super) fn for_area(area: &Area, band: usize) -> Self {
         let owned: FxHashMap<(i32, i32), usize> = area.keys().map(|&s| (s, 0)).collect();
         Self {
             by_region: vec![area.keys().copied().collect()],
@@ -265,7 +265,7 @@ impl Regions {
     }
 
     /// The sections region `k` owns, with their kinds.
-    fn area_of(&self, k: usize) -> Area {
+    pub(super) fn area_of(&self, k: usize) -> Area {
         self.kinds.get(k).cloned().unwrap_or_default()
     }
 
@@ -332,7 +332,7 @@ pub(super) struct RegionState {
     /// region of their own.
     pub spares: Arc<Spares>,
     /// The ids of the regions made so far, shared by every region ([`RegionId`]).
-    ids: Arc<AtomicU64>,
+    pub(super) ids: Arc<AtomicU64>,
     /// Region games being made on threads of their own (making one reads files and builds a whole game: a stall
     /// of seconds on the server's thread), taken in once made.
     factory: Vec<std::sync::mpsc::Receiver<std::result::Result<Box<Game<'static>>, String>>>,
@@ -351,12 +351,25 @@ pub(super) struct RegionState {
     /// Where the server thread's tick time goes while regions are resident.
     pub(super) prof: super::region_profile::TickProfile,
     /// A region game's own part: where it stands among its level's regions.
-    link: Option<RegionLink>,
+    pub(super) link: Option<RegionLink>,
     /// The sections this region game owns, as it last claimed them in the level's [`SectionMap`].
-    area: Area,
+    pub(super) area: Area,
     /// What the area was worked out from last (players' places, ticking chunks), so a tick where nothing moved
     /// skips the work.
-    topology_seen: Option<u64>,
+    pub(super) topology_seen: Option<u64>,
+    /// The task queues and hand-offs every game of the server shares (game/runtime/region_tasks.rs).
+    pub(super) tasks: Arc<super::region_tasks::Tasks>,
+    /// What this game asked other regions and waits for, by the player asked about.
+    pub(super) questions: HashMap<u128, super::region_tasks::Question>,
+    /// The command now running may be held for an answer ([`Game::defer_command`]).
+    pub(super) deferrable: bool,
+    /// The command that just ran asked for an answer and is held.
+    pub(super) command_deferred: bool,
+    /// A player came to or left this region game during its tick (a hand-off): the server's thread is told its
+    /// connections.
+    pub(super) conns_dirty: bool,
+    /// The tick a command run again first ran in, while it is.
+    pub(super) deferred_since: Option<u64>,
 }
 
 /// Region games made and not in use.
@@ -374,14 +387,14 @@ impl Spares {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
     /// A game for a region that splits off.
-    fn take(&self) -> Option<Box<Game<'static>>> {
+    pub(super) fn take(&self) -> Option<Box<Game<'static>>> {
         let game = self.lock().pop();
         if game.is_none() {
             self.wanted.fetch_add(1, Ordering::Relaxed);
         }
         game
     }
-    fn give(&self, mut game: Box<Game<'static>>) {
+    pub(super) fn give(&self, mut game: Box<Game<'static>>) {
         game.regions.link = None;
         game.regions.area.clear();
         game.regions.topology_seen = None;
@@ -395,26 +408,26 @@ impl Spares {
 /// Where a resident region stands among its level's: what its own thread needs to claim sections, split and ask
 /// for a merge without the server's thread.
 #[derive(Clone)]
-struct RegionLink {
-    shared: Arc<SetShared>,
-    id: RegionId,
-    spares: Arc<Spares>,
-    ids: Arc<AtomicU64>,
-    pool: Arc<AtomicU32>,
+pub(super) struct RegionLink {
+    pub(super) shared: Arc<SetShared>,
+    pub(super) id: RegionId,
+    pub(super) spares: Arc<Spares>,
+    pub(super) ids: Arc<AtomicU64>,
+    pub(super) pool: Arc<AtomicU32>,
 }
 
 /// What one level's resident regions share.
 #[derive(Default)]
-struct SetShared {
+pub(super) struct SetShared {
     /// Who owns each section.
-    map: SectionMap,
+    pub(super) map: SectionMap,
     /// Pairs of regions within the merge radius of each other (the smaller id first), found by their own threads:
     /// the server's thread merges them at the next tick boundary.
-    merges: std::sync::Mutex<std::collections::BTreeSet<(RegionId, RegionId)>>,
+    pub(super) merges: std::sync::Mutex<std::collections::BTreeSet<(RegionId, RegionId)>>,
 }
 
 impl SetShared {
-    fn ask_merge(&self, a: RegionId, b: RegionId) {
+    pub(super) fn ask_merge(&self, a: RegionId, b: RegionId) {
         if a != b {
             self.merges
                 .lock()
@@ -426,11 +439,11 @@ impl SetShared {
 
 /// A level's regions that stay on their threads between ticks.
 pub(super) struct ResidentSet {
-    games: Vec<Slot>,
+    pub(super) games: Vec<Slot>,
     /// All of the regions' chunks, for the streamer: lent columns are loaded, only not in the server's world.
-    lent: Arc<horizon_client::fast_hash::FxHashSet<(i32, i32)>>,
+    pub(super) lent: Arc<horizon_client::fast_hash::FxHashSet<(i32, i32)>>,
     /// The sections' owners.
-    shared: Arc<SetShared>,
+    pub(super) shared: Arc<SetShared>,
 }
 
 /// Resident regions started on their threads this tick, not yet waited for.
@@ -444,7 +457,7 @@ struct Flight {
 }
 
 /// What a region's tick sends back with its game.
-struct Done {
+pub(super) struct Done {
     game: Box<Game<'static>>,
     result: std::result::Result<(), String>,
     took: f32,
@@ -464,52 +477,52 @@ struct Report {
 }
 
 /// A region a region split off: its game with its players, and its id in the map.
-struct Born {
+pub(super) struct Born {
     game: Box<Game<'static>>,
     id: RegionId,
     conns: Vec<u32>,
 }
 
 /// One resident region: its game when it is home, or the channel its thread sends it back on while it ticks.
-struct Slot {
-    game: Option<Box<Game<'static>>>,
-    running: Option<std::sync::mpsc::Receiver<Done>>,
+pub(super) struct Slot {
+    pub(super) game: Option<Box<Game<'static>>>,
+    pub(super) running: Option<std::sync::mpsc::Receiver<Done>>,
     /// Where its players stood when it was last home: the areas the server keeps loaded for them.
-    places: Vec<(i32, i32)>,
+    pub(super) places: Vec<(i32, i32)>,
     /// When its tick started, and when the watchdog last told of it.
-    since: std::time::Instant,
-    told: Option<std::time::Instant>,
+    pub(super) since: std::time::Instant,
+    pub(super) told: Option<std::time::Instant>,
     /// How long its last tick took (ms) and how many chunks it held then.
-    took: f32,
-    chunks: usize,
+    pub(super) took: f32,
+    pub(super) chunks: usize,
     /// Its part of the level and its players are home, ticking with the server's thread this tick; it is lent
     /// again at the start of the next.
-    landed: bool,
+    pub(super) landed: bool,
     /// Lent again: its game takes the tick's settings, as one just lent.
-    fresh: bool,
+    pub(super) fresh: bool,
     /// The connections of its players.
-    conns: Vec<u32>,
+    pub(super) conns: Vec<u32>,
     /// Its players as native mods see them (`native_server_players`), as of the last time the region was home.
-    players: Vec<AwayPlayer>,
+    pub(super) players: Vec<AwayPlayer>,
     /// Its players' sleep counts as it last reported them.
-    sleep: (i64, i64, i64),
+    pub(super) sleep: (i64, i64, i64),
     /// Its id in the level's [`SectionMap`], and the name it has among the regions ([`Game::route_region_chat`]).
-    uid: RegionId,
+    pub(super) uid: RegionId,
     /// Chat lines said elsewhere for its players, sent when it is next lent or lands.
-    mail: Vec<horizon_client::lan::hub::chat::RegionChat>,
+    pub(super) mail: Vec<horizon_client::lan::hub::chat::RegionChat>,
     /// Why its own thread asked for it to come home ([`Report::wants`]).
-    wants: Option<&'static str>,
+    pub(super) wants: Option<&'static str>,
     /// Some of the terrain in its players' views was not lent with it (not loaded or not finished yet): it comes
     /// home to be lent again once the server's game holds some.
-    owed: bool,
+    pub(super) owed: bool,
     /// Ticks before the terrain it is owed may bring it home again, so terrain that arrives chunk by chunk
     /// comes in batches.
-    terrain_wait: u32,
+    pub(super) terrain_wait: u32,
     /// The regions it split off, until the set takes them in.
-    born: Vec<Born>,
+    pub(super) born: Vec<Born>,
     /// Its players as `server-status` tells of them, and what it held, as of the last time the region was home.
-    status: Vec<AwayStatus>,
-    entities: usize,
+    pub(super) status: Vec<AwayStatus>,
+    pub(super) entities: usize,
 }
 
 /// A player away in a region, as `server-status` reports them: the supervisor asks every second, and a region
@@ -531,7 +544,7 @@ pub(super) struct AwayPlayer {
 }
 
 impl Slot {
-    fn new(game: Box<Game<'static>>, uid: RegionId) -> Self {
+    pub(super) fn new(game: Box<Game<'static>>, uid: RegionId) -> Self {
         Self {
             uid,
             mail: Vec::new(),
@@ -557,7 +570,7 @@ impl Slot {
     }
     /// Takes the game in if its thread finished (waiting until `until`, or for good when None); false while it
     /// still runs.
-    fn home(&mut self, until: Option<std::time::Instant>) -> std::result::Result<bool, String> {
+    pub(super) fn home(&mut self, until: Option<std::time::Instant>) -> std::result::Result<bool, String> {
         let Some(rx) = self.running.as_ref() else {
             return Ok(true);
         };
@@ -646,7 +659,7 @@ const REGION_RELIGHT_PER_TICK: usize = 1024;
 const SHRINK_SLACK: usize = 24;
 
 /// Ticks between two landings of a region for terrain it is owed.
-const TERRAIN_GAP: u32 = 5;
+pub(super) const TERRAIN_GAP: u32 = 5;
 
 /// Region games kept ready for a region to split off into.
 const SPARE_GAMES: usize = 1;
@@ -773,6 +786,8 @@ impl Game<'_> {
         self.world_biomes = from.world_biomes.clone();
         self.end.set_locator(from.end.locator());
         self.dim = from.dim;
+        // The task queues are the server's, one set for all its games.
+        self.regions.tasks = Arc::clone(&from.regions.tasks);
         self.world_flat = from.world_flat;
         self.world_debug = from.world_debug;
         // The server's tables, shared: building them reads every item and recipe file from disk.
@@ -1050,6 +1065,10 @@ impl Game<'_> {
 /// parallel tick setting never splits a world. It also needs the parallel tick on (`HORIZON_PARALLEL_TICK=0`
 /// keeps every tick serial) and `HORIZON_REGION_THREADS=0` turns it off.
 fn region_threads_on() -> bool {
+    #[cfg(test)]
+    if tests::REGIONS_FORCED.with(std::cell::Cell::get) {
+        return true;
+    }
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *ON.get_or_init(|| {
         std::env::var("HORIZON_REGIONS").is_ok_and(|v| matches!(v.trim(), "1" | "on" | "true"))
@@ -1285,6 +1304,15 @@ impl Game<'_> {
             let mut k = 0;
             while k < set.games.len() {
                 if set.games[k].landed {
+                    // A player whose command waits for another region's answer stays home until it has run.
+                    if self.lan.as_ref().is_some_and(|h| {
+                        h.deferred_commands
+                            .iter()
+                            .any(|(c, ..)| set.games[k].conns.contains(&c.conn))
+                    }) {
+                        k += 1;
+                        continue;
+                    }
                     relent = true;
                     if !self.relend_slot(&mut set, k) {
                         continue;
@@ -1302,6 +1330,10 @@ impl Game<'_> {
                 return None;
             }
             self.route_region_chat(Some(&mut set));
+            // Players handed off to this level's regions, and those that arrived in it (a command, a portal):
+            // each goes to the region that owns where they stand.
+            self.deliver_set_handoffs(&mut set);
+            self.route_strays(&mut set);
             match self.residents_must_land(&set) {
                 Some(Land::All(why)) => {
                     self.regions.prof.landed_because(why);
@@ -1437,6 +1469,12 @@ impl Game<'_> {
                     w.tick_region_phases().map_err(|e| e.to_string())?;
                     // The end of its own tick: the sections it needs, a split, a merge to ask for.
                     report = w.region_topology();
+                    if std::mem::take(&mut w.regions.conns_dirty) && report.conns.is_none() {
+                        report.conns = w
+                            .lan
+                            .as_ref()
+                            .map(|h| h.hub.guests.iter().map(|g| g.conn).collect());
+                    }
                     Ok(())
                 }))
                 .unwrap_or_else(|_| Err("a region thread panicked".to_owned()));
@@ -1813,6 +1851,8 @@ impl Game<'_> {
             set.shared.map.release_all(id);
             self.regions.spares.give(w);
             set.games.remove(k);
+            // What was queued for the region goes to the server's game: its players are gone, and so is it.
+            self.regions.tasks.merge_region(id, super::region_tasks::SERVER);
             return false;
         }
         let guests = host
@@ -1881,6 +1921,10 @@ impl Game<'_> {
         let mut conns: Vec<u32> = Vec::new();
         for mut slot in set.games {
             conns.extend(slot.conns.iter().copied());
+            // The region is home for good: what was queued for it is the server's game's now.
+            self.regions
+                .tasks
+                .merge_region(slot.uid, super::region_tasks::SERVER);
             let Some(mut w) = slot.game.take() else {
                 continue;
             };
@@ -2146,6 +2190,8 @@ impl Game<'_> {
 
     /// One region game's phases of the tick: the level's entities and blocks in its chunks, around its players.
     pub(super) fn tick_region_phases(&mut self) -> Result<()> {
+        // What other regions asked of this one, before the tick's own work.
+        self.run_region_tasks();
         self.level_pass = super::levels::Pass {
             first: false,
             last: false,
@@ -2513,6 +2559,7 @@ impl Game<'_> {
             big.absorb_region(&mut small);
             log::info!("regions: region {} merged into region {}", gone_slot.uid, slot.uid);
             set.shared.map.reassign(gone_slot.uid, slot.uid);
+            self.regions.tasks.merge_region(gone_slot.uid, slot.uid);
             slot.conns.append(&mut gone_slot.conns);
             slot.mail.append(&mut gone_slot.mail);
             slot.players.append(&mut gone_slot.players);
@@ -2544,7 +2591,7 @@ fn chunks_of(w: &Game<'_>) -> Vec<ChunkPos> {
 
 /// Whether a chunk in the view of one of region game `w`'s players is not among the chunks `lent` to the
 /// regions: not loaded yet, or not finished, so the server's game still holds it.
-fn terrain_owed(w: &Game<'_>, lent: &FxHashSet<(i32, i32)>) -> bool {
+pub(super) fn terrain_owed(w: &Game<'_>, lent: &FxHashSet<(i32, i32)>) -> bool {
     let Some(h) = w.lan.as_ref() else {
         return false;
     };
@@ -2699,36 +2746,36 @@ fn array_chunk(p: &[i32; 3]) -> (i32, i32) {
 /// One region's part of a level, split out of the server's game ([`Game::split_level`]).
 pub(super) struct RegionPart {
     /// The chunks of the part already scanned for creaking hearts.
-    scanned: horizon_client::fast_hash::FxHashSet<(i32, i32)>,
-    world: horizon_client::world::World,
-    ticks: horizon_world::level::Ticks,
-    sections: horizon_client::random_tick_sections::RandomTickSections,
-    sequences: horizon_client::random_sequences::RandomSequences,
-    mobs: Vec<Mob>,
-    dropped: Vec<super::ItemEntity>,
-    orbs: Vec<super::ExperienceOrb>,
-    projectiles: Vec<horizon_client::projectiles::Projectile>,
-    falling: Vec<super::FallingBlock>,
-    paintings: Vec<horizon_client::entities::Painting>,
-    item_frames: Vec<horizon_client::entities::ItemFrame>,
-    armor_stands: Vec<horizon_client::entities::ArmorStand>,
-    cushions: Vec<horizon_client::entities::Cushion>,
-    others: Vec<super::commands::OtherEntity>,
-    boats: Vec<super::boats::Boat>,
-    carts: Vec<super::minecarts::Minecart>,
-    bolts: Vec<super::lightning::Bolt>,
-    crystals: Vec<super::dragon::Crystal>,
-    breath_clouds: Vec<super::dragon::Breath>,
-    tridents: Vec<super::trident::ThrownTrident>,
-    rockets: Vec<super::fireworks::Rocket>,
-    ominous_spawners: Vec<super::ominous_item_spawner::OminousItemSpawner>,
-    tnts: Vec<super::tnt::PrimedTnt>,
-    hoppers: HashMap<(i32, i32, i32), super::machines::HopperState>,
-    jukebox_sounds: HashMap<(i32, i32, i32), u64>,
-    lid_openers: HashMap<(i32, i32, i32), i32>,
-    knot_ids: HashMap<[i32; 3], u32>,
-    lectern_pulses: Vec<((i32, i32, i32), i32)>,
-    anims: horizon_client::block_entity_anim::BlockEntityAnims,
+    pub(super) scanned: horizon_client::fast_hash::FxHashSet<(i32, i32)>,
+    pub(super) world: horizon_client::world::World,
+    pub(super) ticks: horizon_world::level::Ticks,
+    pub(super) sections: horizon_client::random_tick_sections::RandomTickSections,
+    pub(super) sequences: horizon_client::random_sequences::RandomSequences,
+    pub(super) mobs: Vec<Mob>,
+    pub(super) dropped: Vec<super::ItemEntity>,
+    pub(super) orbs: Vec<super::ExperienceOrb>,
+    pub(super) projectiles: Vec<horizon_client::projectiles::Projectile>,
+    pub(super) falling: Vec<super::FallingBlock>,
+    pub(super) paintings: Vec<horizon_client::entities::Painting>,
+    pub(super) item_frames: Vec<horizon_client::entities::ItemFrame>,
+    pub(super) armor_stands: Vec<horizon_client::entities::ArmorStand>,
+    pub(super) cushions: Vec<horizon_client::entities::Cushion>,
+    pub(super) others: Vec<super::commands::OtherEntity>,
+    pub(super) boats: Vec<super::boats::Boat>,
+    pub(super) carts: Vec<super::minecarts::Minecart>,
+    pub(super) bolts: Vec<super::lightning::Bolt>,
+    pub(super) crystals: Vec<super::dragon::Crystal>,
+    pub(super) breath_clouds: Vec<super::dragon::Breath>,
+    pub(super) tridents: Vec<super::trident::ThrownTrident>,
+    pub(super) rockets: Vec<super::fireworks::Rocket>,
+    pub(super) ominous_spawners: Vec<super::ominous_item_spawner::OminousItemSpawner>,
+    pub(super) tnts: Vec<super::tnt::PrimedTnt>,
+    pub(super) hoppers: HashMap<(i32, i32, i32), super::machines::HopperState>,
+    pub(super) jukebox_sounds: HashMap<(i32, i32, i32), u64>,
+    pub(super) lid_openers: HashMap<(i32, i32, i32), i32>,
+    pub(super) knot_ids: HashMap<[i32; 3], u32>,
+    pub(super) lectern_pulses: Vec<((i32, i32, i32), i32)>,
+    pub(super) anims: horizon_client::block_entity_anim::BlockEntityAnims,
 }
 
 /// A level split into its regions' parts, and the chunks each region holds (for the block ticks' return).
@@ -2924,8 +2971,14 @@ impl Game<'_> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
+
+    thread_local! {
+        /// A test that ticks a whole server by regions turns them on for its own thread: the environment
+        /// variable is read once for the process.
+        pub(in crate::game) static REGIONS_FORCED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
 
     #[test]
     fn thousands_of_lends_across_seventy_regions_take_ids_only_as_they_are_used() {
@@ -3327,6 +3380,71 @@ mod tests {
             assert!(born.game.world.chunks.is_empty());
             assert!(guest_conns(&born.game).is_empty());
             assert!(born.game.persist.uuids.is_empty());
+        });
+    }
+
+    #[test]
+    #[ignore = "daily"]
+    fn a_player_teleported_onto_another_regions_ground_is_handed_to_that_region_by_a_task() {
+        use super::super::region_tasks::Arrival;
+        region_of_two_far_players(|a, spare, _shared, spares| {
+            spares.give(spare);
+            let born = a.region_topology().born.into_iter().next().unwrap();
+            let mut b = born.game;
+            assert!(Arc::ptr_eq(&a.regions.tasks, &b.regions.tasks), "one set of queues for the server");
+            let arrival = Arrival {
+                dim: a.dim,
+                position: [4800.5, 70.0, 5.5],
+                rotation: Some([90.0, 10.0]),
+            };
+            // The command that teleports player 12 queues a task for them; their region runs it at its tick.
+            a.regions.tasks.entity(12, move |owner| owner.teleport_player_task(12, arrival), None);
+            assert_eq!(a.regions.tasks.entity_len(12), 1);
+            b.run_region_tasks();
+            assert_eq!(a.regions.tasks.entity_len(12), 1, "the region that does not hold them leaves it");
+            a.run_region_tasks();
+            // They left A's game with what is kept for them and wait in the queue of the region that owns the
+            // place; B takes them in at its own next tick.
+            assert_eq!(guest_conns(a), Vec::<u32>::new());
+            assert!(a.regions.conns_dirty);
+            assert_eq!(a.regions.tasks.region_len(born.id), 1);
+            // A task for the player queued meanwhile follows them: B runs it, not A.
+            let ran = Arc::new(AtomicU32::new(0));
+            let seen = Arc::clone(&ran);
+            a.regions.tasks.entity(12, move |_| { seen.fetch_add(1, Ordering::Relaxed); }, None);
+            a.run_region_tasks();
+            assert_eq!(ran.load(Ordering::Relaxed), 0);
+            b.run_region_tasks();
+            assert_eq!(guest_conns(&b), [12, 13]);
+            assert_eq!(ran.load(Ordering::Relaxed), 1, "their new region ran the task queued for them");
+            let g = b.lan.as_ref().unwrap().hub.guest(12).unwrap();
+            assert_eq!(g.position, [4800.5, 70.0, 5.5]);
+            assert_eq!((g.yaw, g.pitch), (90.0, 10.0));
+            assert!(b.regions.conns_dirty);
+        });
+    }
+
+    #[test]
+    #[ignore = "daily"]
+    fn a_region_asks_the_region_of_a_player_for_their_place_and_gets_it_a_tick_later() {
+        use super::super::region_tasks::Answer;
+        region_of_two_far_players(|a, spare, _shared, spares| {
+            spares.give(spare);
+            let born = a.region_topology().born.into_iter().next().unwrap();
+            let mut b = born.game;
+            assert!(matches!(a.place_of_remote(13), Answer::Asked));
+            assert!(matches!(a.place_of_remote(13), Answer::Asked), "asked once, still waiting");
+            assert_eq!(a.regions.tasks.entity_len(13), 1);
+            // The player's own region answers at the start of its tick.
+            b.run_region_tasks();
+            let Answer::Ready(place) = a.place_of_remote(13) else {
+                panic!("answered");
+            };
+            assert_eq!(place.name, "guest13");
+            assert_eq!(place.position, [4800.0, 64.0, 5.0]);
+            assert_eq!(place.dim, a.dim);
+            // The answer is used up: a later question is a new one.
+            assert!(matches!(a.place_of_remote(13), Answer::Asked));
         });
     }
 }

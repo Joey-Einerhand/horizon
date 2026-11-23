@@ -923,9 +923,21 @@ Region ticking trades some of vanilla's behaviour for speed, the way other regio
   tick has no order, and the random draws are not the ones a serial tick would make. Regions read the clock and the
   weather one tick late.
 - **Things that need the whole level bring regions home first.** Commands (the console's too), datapack tick
-  functions, a join or a leave, a death, a portal or a teleport to another level, a save, and a native mod's hook
-  for a player make the regions involved (often all of them) come back to the server's thread before they run. They
-  work as without regions; a datapack that runs every tick, or a busy command line, costs most of the gain.
+  functions, a join or a leave, a death, a save, and a native mod's hook for a player make the regions involved
+  (often all of them) come back to the server's thread before they run. They work as without regions; a datapack
+  that runs every tick, or a busy command line, costs most of the gain. Teleports are the exception, below.
+- **Teleports hand the player to the region that owns the place.** A player who is teleported (a command, a
+  portal, a respawn, a mod, another region's task) goes to the region that owns where they arrive, in their level
+  or in another, and no other region comes home for it. A place no region owns gets a region of its own; a level
+  with no regions is the server thread's. `/tp <targets> <player>` for a player in another region (of the same
+  level or another) asks that player's region for their place first: the region answers at its next tick, so the
+  command runs a tick or two later than without regions (held until then, five seconds at most, then it fails with
+  "No entity was found"). Only a command typed by a player that is made of nothing but the `/tp` is held: inside a
+  function or an `execute` chain, a player in another region is not found. `/tp <player in another region>
+  <destination>` is run by that player's own region. Work for a region or an entity is queued, never run across
+  regions: a region's queue is run at its next tick, an entity's by whichever region holds the entity then (it
+  follows the entity when it is handed over), and a task whose entity is gone for good is dropped after five
+  seconds.
 - **Chat stays in its region.** A line a player says is relayed by their region to its own players, and the
   server's thread carries it to the others (the server's own players and the other regions, which send it at
   their next tick). It brings no region home, unless a native mod has to see it first, or the chat filter refuses it

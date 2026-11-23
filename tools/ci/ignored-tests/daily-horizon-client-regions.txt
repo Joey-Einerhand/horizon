@@ -2,3 +2,6 @@
 horizon-client game::regions::tests::a_region_whose_players_walked_apart_splits_itself_and_each_part_keeps_its_state lib daily resources
 horizon-client game::regions::tests::a_region_that_finds_no_spare_game_keeps_everything_and_asks_for_one lib daily resources
 horizon-client game::regions::tests::a_region_absorbed_by_another_hands_over_its_entities_players_chunks_and_sections lib daily resources
+horizon-client game::regions::tests::a_player_teleported_onto_another_regions_ground_is_handed_to_that_region_by_a_task lib daily resources
+horizon-client game::regions::tests::a_region_asks_the_region_of_a_player_for_their_place_and_gets_it_a_tick_later lib daily resources
+horizon-client game::region_teleport_tests::players_in_separate_regions_teleport_to_each_other_within_a_level_and_across_levels lib daily resources
