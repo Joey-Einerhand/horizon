@@ -1459,6 +1459,17 @@ pub fn parse_stack(snbt: &str) -> Result<Option<ItemStack>, String> {
     let (tag, _) = horizon_core::nbt::parse_snbt(snbt)?;
     Ok(crate::item_nbt::item_from_nbt(&tag))
 }
+/// `parse_stack` against the loaded item prototypes, as `ItemStack.CODEC` builds it.
+pub fn parse_stack_with_items(
+    snbt: &str,
+    items: &crate::items::Items,
+) -> Result<Option<ItemStack>, String> {
+    if snbt == "-" {
+        return Ok(None);
+    }
+    let (tag, _) = horizon_core::nbt::parse_snbt(snbt)?;
+    Ok(crate::item_nbt::item_from_nbt_with_items(&tag, items))
+}
 /// `MapDecorations.Entry.CODEC`: a bare type ID uses the default resource namespace.
 /// Keep preserved entry keys and numeric tags intact; this is not registry validation.
 fn canonical_other_component(id: &str, tag: &Tag) -> Tag {
@@ -2186,6 +2197,69 @@ pub fn decode_components_for_item(
     (damage, extra)
 }
 
+/// `PatchedDataComponentMap.applyPatch` and `set`: a component whose value
+/// equals the item's `prototype` (`Items::component_defaults`) is no part of
+/// the stack's patch, nor is the removal of a component it lacks. Differing
+/// values and removals of its own components stay. Call this where a
+/// stack is built with the item registry at hand. The context-free codecs
+/// have no prototype to compare against.
+pub fn drop_prototype_values(stack: &mut ItemStack, prototype: &horizon_core::nbt::Compound) {
+    let Some(Tag::Compound(mut patch)) = components_tag(stack.damage, stack.data()) else {
+        return;
+    };
+    let before = patch.len();
+    patch.retain(|key, value| {
+        // A removal is kept only where the prototype has the component.
+        if let Some(removed) = key.to_string_lossy().strip_prefix('!') {
+            return prototype.contains_key(&JavaString::from(removed));
+        }
+        prototype
+            .get(key)
+            .is_none_or(|default| !same_component_value(value, default))
+    });
+    if patch.len() == before {
+        return;
+    }
+    let old = stack.extra.take();
+    let patch = (!patch.is_empty()).then_some(Tag::Compound(patch));
+    (stack.damage, stack.extra) = decode_components_for_item(&stack.item, patch.as_ref());
+    // Runtime-only state is not part of the saved patch.
+    if let Some(old) = old
+        && (old.map_post_processing.is_some()
+            || old.bundle_selected.0 != BundleSelected::default().0)
+    {
+        let data = stack.data_mut();
+        data.map_post_processing = old.map_post_processing;
+        data.bundle_selected = old.bundle_selected;
+    }
+}
+
+/// Component values as their codecs read them: a loaded prototype keeps
+/// JSON's narrowest integer tag (`0` is a byte), a stack's patch its own.
+fn same_component_value(a: &Tag, b: &Tag) -> bool {
+    let integer = |tag: &Tag| match tag {
+        Tag::Byte(v) => Some(i64::from(*v)),
+        Tag::Short(v) => Some(i64::from(*v)),
+        Tag::Int(v) => Some(i64::from(*v)),
+        Tag::Long(v) => Some(*v),
+        _ => None,
+    };
+    match (a, b) {
+        (Tag::Compound(a), Tag::Compound(b)) => {
+            a.len() == b.len()
+                && a.iter()
+                    .all(|(key, v)| b.get(key).is_some_and(|w| same_component_value(v, w)))
+        }
+        (Tag::List(a), Tag::List(b)) => {
+            a.len() == b.len() && a.iter().zip(b).all(|(v, w)| same_component_value(v, w))
+        }
+        _ => match (integer(a), integer(b)) {
+            (Some(a), Some(b)) => a == b,
+            _ => a == b,
+        },
+    }
+}
+
 /// `PatchedDataComponentMap.applyPatch` leaves a component out of the patch
 /// when it equals the item prototype. `Items.FIREWORK_ROCKET` carries
 /// `Fireworks(1, [])`, so that exact value is the prototype's, not the
@@ -2240,6 +2314,81 @@ pub fn command_components(text: &str) -> Result<Tag, String> {
 mod tests {
     use super::*;
     use crate::banner_layer::BannerLayer;
+
+    /// `PatchedDataComponentMap.applyPatch`: values equal to the loaded prototype (whose
+    /// JSON numbers load as their narrowest tag) leave the patch; differing values,
+    /// removals of its components and components it lacks stay; a removal of one it lacks goes.
+    #[test]
+    fn values_equal_to_the_prototype_leave_the_patch() {
+        let prototype = |json: serde_json::Value| {
+            horizon_core::json_nbt::json_to_compound(json.as_object().unwrap()).unwrap()
+        };
+        let pickaxe = prototype(serde_json::json!({
+            "minecraft:damage": 0, "minecraft:max_damage": 250,
+            "minecraft:max_stack_size": 1, "minecraft:repair_cost": 0,
+            "minecraft:enchantments": {}
+        }));
+        let built = |item: &str, snbt: &str, prototype: &horizon_core::nbt::Compound| {
+            let patch = horizon_core::nbt::parse_snbt(snbt).unwrap().0;
+            let (damage, extra) = decode_components_for_item(item, Some(&patch));
+            let mut stack = ItemStack {
+                item: item.into(),
+                count: 1,
+                damage,
+                extra,
+            };
+            drop_prototype_values(&mut stack, prototype);
+            encode_components(&stack)
+        };
+        let snbt = |text: &str| Some(horizon_core::nbt::parse_snbt(text).unwrap().0);
+        let iron = "minecraft:iron_pickaxe";
+        for equal in [
+            r#"{"minecraft:damage":0}"#,
+            r#"{"minecraft:damage":0,"minecraft:max_damage":250}"#,
+            r#"{"minecraft:repair_cost":0,"minecraft:max_stack_size":1}"#,
+            r#"{"minecraft:enchantments":{}}"#,
+        ] {
+            assert_eq!(built(iron, equal, &pickaxe), None, "{equal}");
+        }
+        for kept in [
+            r#"{"minecraft:damage":32}"#,
+            r#"{"minecraft:max_damage":100}"#,
+            r#"{"!minecraft:damage":{}}"#,
+            r#"{"minecraft:custom_data":{keep:87}}"#,
+        ] {
+            assert_eq!(built(iron, kept, &pickaxe), snbt(kept), "{kept}");
+        }
+        assert_eq!(
+            built(
+                iron,
+                r#"{"!minecraft:custom_name":{},"minecraft:custom_data":{keep:87}}"#,
+                &pickaxe,
+            ),
+            snbt(r#"{"minecraft:custom_data":{keep:87}}"#)
+        );
+        assert_eq!(
+            built(
+                iron,
+                r#"{"minecraft:damage":32,"minecraft:max_damage":250,"minecraft:custom_data":{keep:87}}"#,
+                &pickaxe,
+            ),
+            snbt(r#"{"minecraft:damage":32,"minecraft:custom_data":{keep:87}}"#)
+        );
+        // A stick has no durability of its own: its patch's zero and maximum both stay.
+        let stick = prototype(serde_json::json!({"minecraft:max_stack_size": 64}));
+        let durable = r#"{"minecraft:damage":0,"minecraft:max_damage":20}"#;
+        assert_eq!(built("minecraft:stick", durable, &stick), snbt(durable));
+
+        // Runtime-only state survives the rebuild of the patch.
+        let mut map = ItemStack::new("minecraft:filled_map", 1);
+        map.data_mut()
+            .set_other("minecraft:max_stack_size", Some(Tag::Int(64)));
+        map.data_mut().map_post_processing = Some(1);
+        let filled = prototype(serde_json::json!({"minecraft:max_stack_size": 64}));
+        drop_prototype_values(&mut map, &filled);
+        assert_eq!(encode_components(&map), None);
+        assert_eq!(map.data().and_then(|d| d.map_post_processing), Some(1));
+    }
 
     /// `ItemEnchantments.equals` compares a level map: the same enchantments in
     /// another order are the same component, so the stacks stack, merge and match
