@@ -54,11 +54,10 @@ impl Game<'_> {
         if self.global_mode() {
             // With regions out the countdown is the level's, counted here once; the attempt is one region's
             // (game/runtime/global_tick.rs).
-            if trader.attempt_due(&mut self.world.random) {
-                match self.grant_spawn(SpawnerKind::Trader) {
-                    Some(true) => trader.spawned(),
-                    Some(false) | None => {}
-                }
+            if trader.attempt_due(&mut self.world.random)
+                && let Some(true) = self.grant_spawn(SpawnerKind::Trader)
+            {
+                trader.spawned();
             }
         } else {
             trader.tick(self);
