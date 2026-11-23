@@ -398,28 +398,51 @@ jobs:
           mkdir release-files
           cp dist/SHA256SUMS release-files/SHA256SUMS
           cp dist/SHA256SUMS.release.sig release-files/SHA256SUMS.sig
-          # A rerun after the release went out (the bridge failed) resumes: `gh release create` publishes only once all
-          # its assets are up, so an existing release of this tag at this commit is complete.
-          if [[ -n "$(gh release view "$TAG" --json tagName --jq .tagName 2>/dev/null)" ]]; then
-            there=$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)
-            [[ "$there" == "$SHA" ]] || { echo "::error::$TAG exists at ${there:0:7}, not ${SHA:0:7}"; exit 1; }
+          # A rerun resumes what an earlier run left. `gh release create` uploads into a draft and publishes last, so a
+          # published release at this commit with every asset is complete; a leftover draft (an interrupted upload)
+          # is deleted and made again; anything else stops the run.
+          state() {  # tag: none, published or draft:<id>
+            gh api "repos/$GITHUB_REPOSITORY/releases?per_page=100" --jq "map(select(.tag_name==\"$1\")) | if length == 0 then \"none\" elif .[0].draft then \"draft:\(.[0].id)\" else \"published\" end"
+          }
+          drop_draft() {  # tag
+            local s; s=$(state "$1")
+            if [[ "$s" == draft:* ]]; then
+              echo "$1 is an unfinished draft: deleting it"
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/releases/${s#draft:}"
+              gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$1" 2>/dev/null || true
+            fi
+          }
+          complete() {  # tag sha asset-name...: published at the commit with every asset
+            local tag=$1 sha=$2 have a; shift 2
+            [[ "$(state "$tag")" == published ]] || return 1
+            [[ "$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha 2>/dev/null)" == "$sha" ]] || return 1
+            have=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$tag" --jq '.assets[].name')
+            for a in "$@"; do grep -qxF -- "$a" <<<"$have" || return 1; done
+          }
+          names() { local f; for f in "$@"; do f=${f%%#*}; echo "${f##*/}"; done; }
+          release_assets=("${files[@]}" release-files/SHA256SUMS release-files/SHA256SUMS.sig)
+          mapfile -t release_names < <(names "${release_assets[@]}")
+          if complete "$TAG" "$SHA" "${release_names[@]}"; then
             echo "$TAG is already published at ${SHA:0:7}: resuming with the bridge"
           else
+            [[ "$(state "$TAG")" != published ]] || { echo "::error::$TAG is published but is not this build's complete release"; exit 1; }
+            drop_draft "$TAG"
             gh release create "$TAG" --latest --target "$SHA" --title "$(cat dist/release-title.txt)" \
-              --notes-file dist/release-notes.md "${files[@]}" release-files/SHA256SUMS release-files/SHA256SUMS.sig
+              --notes-file dist/release-notes.md "${release_assets[@]}"
           fi
           python3 tools/ci/nightly.py keep-source "$SHA" "$DATE"
           # The `nightly` bridge: servers and launchers from before the numbered releases follow the `nightly`
           # pre-release only. This one, built with the code that follows the latest release, moves them over; then
           # NIGHTLY_BRIDGE=off (a repository variable) stops it, and these lines can go. Never GitHub's latest.
           if [[ -n "$BRIDGE" ]]; then
-            bridged=$(gh api "repos/$GITHUB_REPOSITORY/commits/nightly" --jq .sha 2>/dev/null || true)
-            if [[ "$bridged" == "$SHA" ]]; then
-              echo "nightly already points at ${SHA:0:7}"
+            signature=(dist/SHA256SUMS dist/SHA256SUMS.sig)
+            [[ -f dist/SHA256SUMS.v2.sig ]] && signature+=(dist/SHA256SUMS.v2.sig)
+            mapfile -t bridge_names < <(names "${files[@]}" "${signature[@]}")
+            if complete nightly "$SHA" "${bridge_names[@]}"; then
+              echo "nightly is already published at ${SHA:0:7}"
             else
+              drop_draft nightly
               python3 tools/ci/nightly.py rotate
-              signature=(dist/SHA256SUMS dist/SHA256SUMS.sig)
-              [[ -f dist/SHA256SUMS.v2.sig ]] && signature+=(dist/SHA256SUMS.v2.sig)
               gh release create nightly --prerelease --latest=false --target "$SHA" \
                 --title "Nightly $DATE · ${SHA:0:7}" --notes-file dist/nightly-notes.md \
                 "${files[@]}" "${signature[@]}"
