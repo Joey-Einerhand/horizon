@@ -691,6 +691,62 @@ pub fn block_entity_data(
     }
     tag
 }
+/// `BlockEntity.saveWithFullMetadata` for a modelled entity: the model's
+/// fields plus what Horizon keeps only in the tag it was loaded with (the
+/// `components` a type stores, a container's `lock`, other unmodelled keys),
+/// merged the way a chunk save merges them. `source` is that loaded tag,
+/// `custom_name` is `BaseContainerBlockEntity.name` and `lock` is its
+/// `LockCode`; the result omits the chunk-only `keepPacked`.
+pub fn full_block_entity_data(
+    p: (i32, i32, i32),
+    e: &crate::containers::BlockEntity,
+    block: &str,
+    source: Option<&Tag>,
+    custom_name: Option<&Tag>,
+    lock: Option<&Tag>,
+) -> Tag {
+    let mut current = block_entity_data(p, e, block, lock);
+    if let Some(name) = custom_name
+        && let Tag::Compound(map) = &mut current
+    {
+        map.insert("CustomName".into(), name.clone());
+    }
+    let merged = match source {
+        Some(original)
+            if crate::block_entity_nbt::id(original) == crate::block_entity_nbt::id(&current) =>
+        {
+            let loaded = decode_block_entity(original).map_or_else(
+                || current.clone(),
+                |(q, e)| {
+                    let mut loaded = block_entity_encode::encode(q, &e, block);
+                    if !matches!(
+                        e,
+                        crate::containers::BlockEntity::Banner(_)
+                            | crate::containers::BlockEntity::Sign(_)
+                            | crate::containers::BlockEntity::Mod(_)
+                    ) && let Some(name) = original
+                        .get("CustomName")
+                        .and_then(crate::block_entity_nbt::component)
+                        && let Tag::Compound(map) = &mut loaded
+                    {
+                        // BaseContainerBlockEntity.loadAdditional: the
+                        // external name is also part of the loaded model. Its
+                        // removal must win over the source overlay.
+                        map.insert("CustomName".into(), name);
+                    }
+                    loaded
+                },
+            );
+            merge_block_entity(original, &loaded, &current)
+        }
+        _ => current,
+    };
+    let mut saved = crate::block_entity_nbt::canonical(&merged).unwrap_or(merged);
+    if let Tag::Compound(map) = &mut saved {
+        map.remove(&"keepPacked".into());
+    }
+    saved
+}
 /// `BannerBlockEntity.loadAdditional` (and the `components` a block entity keeps).
 pub fn decode_banner(tag: &Tag) -> crate::containers::Banner {
     crate::containers::Banner {
@@ -2281,7 +2337,9 @@ pub struct SaveDir {
     /// The Overworld's old-world blending cache, read when a save is requested
     /// (installed where `SavedOldWorld` is made for this same folder).
     blending_lookup: OnceLock<BlendingLookup>,
-    /// Lazy canonical section palette cache budget for repeated chunk saves.
+    /// Byte budget of the canonical section palettes its saves leave cached
+    /// on resident sections. Its own until [`Self::share_section_palettes`]
+    /// joins it to another level's folder of the same world.
     section_palettes: Arc<SavedPaletteBudget>,
 }
 fn intern_saved_fluids(root: &NamedTag) {
@@ -2442,6 +2500,11 @@ impl SaveDir {
     /// Mark this as a server-owned world save, not a remote cache.
     pub fn enable_trusted_fluid_load(&mut self) {
         self.trusted_fluid_load = true;
+    }
+    /// Cache section palettes under `other`'s budget, so the levels of one
+    /// world share one cap instead of one each. Set before this folder saves.
+    pub fn share_section_palettes(&mut self, other: &SaveDir) {
+        self.section_palettes = Arc::clone(&other.section_palettes);
     }
     /// Lets saves of this folder take an old chunk's calculated blending data
     /// (`lookup` must not calculate). Set once, before the folder saves.
@@ -3054,6 +3117,29 @@ pub fn write_dat(path: &Path, tag: Tag) -> Result<()> {
     write_dat_as(path, tag, false)
 }
 
+/// Validate the NBT that a reload will see before replacing either file.
+pub fn write_dat_checked(
+    path: &Path,
+    tag: Tag,
+    validate: impl FnOnce(&Tag, &Tag) -> bool,
+) -> Result<bool> {
+    let root = NamedTag {
+        name: "".into(),
+        tag,
+    };
+    let Ok(bytes) = nbt::write_named(&root, Limits::saved()) else {
+        return Ok(false);
+    };
+    let Ok((saved, _)) = crate::recipe_book::read_saved(&bytes) else {
+        return Ok(false);
+    };
+    if !validate(&root.tag, &saved.tag) {
+        return Ok(false);
+    }
+    write_dat_bytes(path, &bytes, false)?;
+    Ok(true)
+}
+
 /// [`write_dat`], synced to the disk: the new file before it is renamed into place, and the
 /// folder after, so a power loss leaves the old file or the new one. A hand-over's commit
 /// point (`player-confirm`) replies only once its files are.
@@ -3105,9 +3191,6 @@ fn sync_folder(path: &Path) -> std::io::Result<()> {
 }
 
 fn write_dat_as(path: &Path, tag: Tag, durable: bool) -> Result<()> {
-    if let Some(dir) = path.parent() {
-        fs::create_dir_all(dir)?;
-    }
     let bytes = nbt::write_named(
         &NamedTag {
             name: "".into(),
@@ -3116,7 +3199,14 @@ fn write_dat_as(path: &Path, tag: Tag, durable: bool) -> Result<()> {
         Limits::saved(),
     )
     .map_err(|e| e.to_string())?;
-    let compressed = Compression::Gzip.encode(&bytes)?;
+    write_dat_bytes(path, &bytes, durable)
+}
+
+fn write_dat_bytes(path: &Path, bytes: &[u8], durable: bool) -> Result<()> {
+    if let Some(dir) = path.parent() {
+        fs::create_dir_all(dir)?;
+    }
+    let compressed = Compression::Gzip.encode(bytes)?;
     let file = path
         .file_name()
         .and_then(|n| n.to_str())

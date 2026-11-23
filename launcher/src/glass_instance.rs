@@ -7,6 +7,7 @@ use super::*;
 use crate::glass_ui::{self as ui, white};
 use horizon_launcher::instances::{self, Channel, Icon, Instance};
 use horizon_launcher::loaders::Kind as Loader;
+use horizon_launcher::nightly::latest_for;
 use horizon_theme::glass::{fill, ink, radius};
 use new_instance::{NewKind, VersionList};
 use servers_page::Field;
@@ -271,22 +272,34 @@ impl Launcher {
         d.pin.clone().or_else(|| self.followed_version())
     }
 
-    /// The version an instance that keeps none plays: the launcher's, which follows each new release, or with
-    /// none installed yet, the newest listed.
+    /// The installed version an unpinned draft plays today.
     fn followed_version(&self) -> Option<String> {
-        self.launcher_version()
-            .cloned()
-            .or_else(|| self.horizon_choices().into_iter().next())
+        latest_for(
+            Channel::Nightly,
+            &self.installed,
+            self.settings.selected.as_deref(),
+        )
+    }
+
+    /// A saved pin may need a download; when nothing is installed, saving can fetch the first build.
+    pub(super) fn draft_download(&self) -> Option<Release> {
+        let draft = self.instances.dialog.as_ref()?;
+        let tag = draft.pin.clone().or_else(|| {
+            self.installed
+                .is_empty()
+                .then(|| self.horizon_choices().into_iter().next())
+                .flatten()
+        })?;
+        self.release_to_install(&tag)
     }
 
     /// Whether Home's Stable update has to wait: another download runs or is queued, and the
     /// update never replaces it.
     pub(super) fn stable_update_waits(&self) -> bool {
-        self.installing.is_some() || self.install_next.is_some()
+        self.installing.is_some() || !self.install_queue.is_empty()
     }
 
-    /// Home's Stable update: installed for the instance, so the version picked on Versions, which
-    /// Nightly instances follow, stays; never while another download runs or is queued.
+    /// Home's Stable update is installed for the instance when no other download is pending.
     pub(super) fn install_stable_update(&mut self, release: Release) {
         if !self.stable_update_waits() {
             self.stable_install = Some(release.clone());
@@ -598,8 +611,8 @@ impl Launcher {
 }
 
 /// Every numbered release (after the Nightlies) and Nightly published with a build for this platform, newest
-/// first, then the installed versions that list lacks (older builds, imported ones). Picking one not installed
-/// installs it on Create.
+/// first, then the installed versions that list lacks (older builds, imported ones). Picking one not installed installs
+/// it on Create.
 pub(super) fn horizon_choices(releases: &[Release], installed: &[String]) -> Vec<String> {
     let published = releases
         .iter()
@@ -1010,8 +1023,8 @@ impl Launcher {
             .child(buttons.flex_none())
     }
 
-    /// Horizon's version: a dropdown of the releases, newest first, under "Latest" (which follows each new one).
-    /// Any other pick is kept, and installed on Create when it isn't yet.
+    /// Horizon's version: a dropdown of the releases, newest first, under "Latest" (which follows each new one). Any other pick is kept, and installed
+    /// on Create when it isn't yet.
     pub(super) fn horizon_versions(&mut self, cx: &mut Context<Self>) -> Div {
         let t = self.theme;
         let soft = self.look.accent_soft;
@@ -1039,30 +1052,11 @@ impl Launcher {
             others.push(p.clone());
         }
         let name = |tag: &str| self.version_label(tag);
-        // Latest plays the version picked on Versions: an older one Use picked is named, never
-        // called the latest.
-        let held = self.held_version().map(|tag| self.version_name(tag));
-        // The way back through Versions is only for an instance following Latest, not one that
-        // keeps its own build.
-        let note = ui::text(13., FontWeight::NORMAL, ink::QUIET).child(
-            match held.as_ref().filter(|_| pin.is_none()) {
-                None => tr("The newest release, kept up to date.").to_string(),
-                Some(_) if self.use_sets_selection() => tr(
-                    "Another version was picked on Versions: press Use on the newest there to \
-                     follow new ones again.",
-                )
-                .to_string(),
-                Some(_) => trf(
-                    "Another version was picked on Versions. {how}.",
-                    &[("how", &self.follow_again_hint())],
-                ),
-            },
-        );
-        let current = match (&pin, &held) {
-            (None, Some(held)) => trf("{version} (picked on Versions)", &[("version", held)]),
-            (None, None) => tr("Latest").to_string(),
-            (Some(p), _) => name(p),
-        };
+        let note = ui::text(13., FontWeight::NORMAL, ink::QUIET)
+            .child(tr("The newest release, kept up to date."));
+        let current = pin
+            .as_deref()
+            .map_or_else(|| tr("Latest").to_string(), name);
         let button = keyboard(
             div()
                 .id("horizon-version-menu")
@@ -1107,22 +1101,19 @@ impl Launcher {
                     cx.notify();
                 }))
         };
-        // While Versions holds an older build, this row plays that one, so it is titled by it,
-        // never "Latest".
-        let (title, details) = match &held {
-            Some(held) => (
-                trf("{version} (picked on Versions)", &[("version", held)]),
-                self.follow_again_hint(),
-            ),
-            None => (
-                tr("Latest").to_string(),
-                tr("Moves to each new one").to_string(),
-            ),
-        };
+        let details = self.followed_version().map_or_else(
+            || tr("No version installed").to_string(),
+            |tag| {
+                trf(
+                    "Now {version}. Moves to each new one.",
+                    &[("version", &name(&tag))],
+                )
+            },
+        );
         let mut rows = vec![row(
             "horizon-version-latest".into(),
             pin.is_none(),
-            title,
+            tr("Latest").to_string(),
             details,
             None,
         )];

@@ -65,7 +65,14 @@ else
 
   api() { curl -fsSL -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$REPO/releases/$1"; }
   if [ "$VERSION" = latest ]; then
-    JSON=$(api tags/nightly) || JSON=$(api latest) || die "no release on GitHub"
+    # The newer of GitHub's latest release and the `nightly` pre-release: a numbered release of a line after 0.2
+    # (v0.3.0 on) is newer than every Nightly, the 0.2 line and older are not (as `horizon-server update` ranks them).
+    JSON=$(api latest) || JSON=
+    LATEST_TAG=$(printf '%s\n' "$JSON" | sed -n 's/^  "tag_name": "\([^"]*\)".*/\1/p' | head -n 1)
+    case "$LATEST_TAG" in
+      v0.[3-9].*|v0.[1-9][0-9]*.*|v[1-9].*|v[1-9][0-9].*|v[1-9][0-9][0-9].*) ;;
+      *) NIGHTLY_JSON=$(api tags/nightly) && JSON=$NIGHTLY_JSON; [ -n "$JSON" ] || die "no release on GitHub" ;;
+    esac
   else
     JSON=$(api "tags/$VERSION") || die "no release $VERSION on GitHub"
   fi

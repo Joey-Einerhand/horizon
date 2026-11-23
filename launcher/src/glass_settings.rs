@@ -735,7 +735,10 @@ impl Launcher {
             "Launcher {launcher}, game {game}",
             &[
                 ("launcher", env!("CARGO_PKG_VERSION")),
-                ("game", self.settings.selected.as_deref().unwrap_or(&latest)),
+                (
+                    "game",
+                    self.selected().map_or(latest.as_str(), String::as_str),
+                ),
             ],
         )
         .to_string();

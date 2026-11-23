@@ -398,19 +398,32 @@ jobs:
           mkdir release-files
           cp dist/SHA256SUMS release-files/SHA256SUMS
           cp dist/SHA256SUMS.release.sig release-files/SHA256SUMS.sig
-          gh release create "$TAG" --latest --target "$SHA" --title "$(cat dist/release-title.txt)" \
-            --notes-file dist/release-notes.md "${files[@]}" release-files/SHA256SUMS release-files/SHA256SUMS.sig
+          # A rerun after the release went out (the bridge failed) resumes: `gh release create` publishes only once all
+          # its assets are up, so an existing release of this tag at this commit is complete.
+          if [[ -n "$(gh release view "$TAG" --json tagName --jq .tagName 2>/dev/null)" ]]; then
+            there=$(gh api "repos/$GITHUB_REPOSITORY/commits/$TAG" --jq .sha)
+            [[ "$there" == "$SHA" ]] || { echo "::error::$TAG exists at ${there:0:7}, not ${SHA:0:7}"; exit 1; }
+            echo "$TAG is already published at ${SHA:0:7}: resuming with the bridge"
+          else
+            gh release create "$TAG" --latest --target "$SHA" --title "$(cat dist/release-title.txt)" \
+              --notes-file dist/release-notes.md "${files[@]}" release-files/SHA256SUMS release-files/SHA256SUMS.sig
+          fi
           python3 tools/ci/nightly.py keep-source "$SHA" "$DATE"
           # The `nightly` bridge: servers and launchers from before the numbered releases follow the `nightly`
           # pre-release only. This one, built with the code that follows the latest release, moves them over; then
           # NIGHTLY_BRIDGE=off (a repository variable) stops it, and these lines can go. Never GitHub's latest.
           if [[ -n "$BRIDGE" ]]; then
-            python3 tools/ci/nightly.py rotate
-            signature=(dist/SHA256SUMS dist/SHA256SUMS.sig)
-            [[ -f dist/SHA256SUMS.v2.sig ]] && signature+=(dist/SHA256SUMS.v2.sig)
-            gh release create nightly --prerelease --latest=false --target "$SHA" \
-              --title "Nightly $DATE · ${SHA:0:7}" --notes-file dist/nightly-notes.md \
-              "${files[@]}" "${signature[@]}"
+            bridged=$(gh api "repos/$GITHUB_REPOSITORY/commits/nightly" --jq .sha 2>/dev/null || true)
+            if [[ "$bridged" == "$SHA" ]]; then
+              echo "nightly already points at ${SHA:0:7}"
+            else
+              python3 tools/ci/nightly.py rotate
+              signature=(dist/SHA256SUMS dist/SHA256SUMS.sig)
+              [[ -f dist/SHA256SUMS.v2.sig ]] && signature+=(dist/SHA256SUMS.v2.sig)
+              gh release create nightly --prerelease --latest=false --target "$SHA" \
+                --title "Nightly $DATE · ${SHA:0:7}" --notes-file dist/nightly-notes.md \
+                "${files[@]}" "${signature[@]}"
+            fi
             python3 tools/ci/nightly.py prune --days 7
           fi
       - name: Dry run, the nightly that would be published
