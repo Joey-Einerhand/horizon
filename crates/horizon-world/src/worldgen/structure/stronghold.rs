@@ -18,6 +18,7 @@ use {
 /// ChunkGeneratorStructureState.generateRingPositions with
 /// BiomeSource.findBiomeHorizontal (radius 112, step 1, not closest).
 /// `biomes` samples a search's quarts in order, as one caching resolver.
+#[horizon_mod_api_macros::replaceable]
 pub fn ring_positions(
     seed: i64,
     distance: i32,
