@@ -2398,6 +2398,8 @@ impl Game<'_> {
                     let dir = glam::DVec2::new(f64::from(trig::sin(r)), f64::from(-trig::cos(r)))
                         .normalize();
                     let aim = glam::DVec2::new(pp.x - pos.x, pp.z - pos.z).normalize_or_zero();
+                    // parity: unaudited raw trig (#18123)
+                    #[allow(clippy::disallowed_methods)]
                     let angle = dir.dot(aim).clamp(-1.0, 1.0).acos().to_degrees() + 0.5;
                     if *charge >= 5 && (0.0..10.0).contains(&angle) {
                         // From the head, one block back along the view vector.
@@ -2521,6 +2523,8 @@ impl Game<'_> {
                             f64::from(-trig::cos(r)),
                         ));
                         let dot = dir.dot(aim) as f32;
+                        // parity: unaudited raw trig (#18123)
+                        #[allow(clippy::disallowed_methods)]
                         let angle =
                             (f64::from(dot).acos() * f64::from(trig::RAD_TO_DEG)) as f32 + 0.5;
                         if angle < 0.0 || angle > 10.0 {
@@ -3047,6 +3051,8 @@ impl Game<'_> {
     }
 
     /// `EnderDragonFight.setDragonKilled`.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn dragon_killed(&mut self) {
         let _ = self.activate_exit_portal();
         if let Some(g) = self.fight.gateways.pop() {
@@ -3245,6 +3251,8 @@ impl Game<'_> {
             for _ in 0..((std::f32::consts::PI * r * r) as i32).min(40) {
                 let a = self.world.random.next_float() * std::f32::consts::TAU;
                 let d = self.world.random.next_float().sqrt() * r;
+                // parity: unaudited raw trig (#18123)
+                #[allow(clippy::disallowed_methods)]
                 let at = [
                     c.at[0] + f64::from(a.cos() * d),
                     c.at[1],
@@ -3544,6 +3552,8 @@ impl Breath {
 }
 impl Game<'_> {
     /// `EnderDragonRenderer` and `EnderDragonModel.setupAnim`.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn dragon_geometry(
         &self,
         camera: glam::DVec3,
@@ -3754,6 +3764,8 @@ impl Game<'_> {
     }
     /// `submitCrystalBeams`: an eight-sided tube from `from` (+2 up) along
     /// `delta`, the beam texture scrolling along it.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn crystal_beam(
         &self,
         from: glam::DVec3,

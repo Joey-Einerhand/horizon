@@ -12,6 +12,9 @@
 //! the engine's mouse (`horizon_client_input::mouse`) only sees a plain
 //! [`LookOptions::yaw_scale`](crate::mouse::LookOptions::yaw_scale).
 
+// Raw trig is fine here: rendering, sound or UI math, not simulation (#18123).
+#![allow(clippy::disallowed_methods)]
+
 /// The most the polar look multiplies a scoped yaw by: `1/|cos(pitch)|` reaches it at 82.82°.
 pub const MAX: f64 = 8.0;
 

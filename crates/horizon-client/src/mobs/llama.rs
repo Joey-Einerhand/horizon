@@ -158,6 +158,8 @@ impl Goal for LlamaHurtBy {
 }
 /// `Llama.performRangedAttack` / `spit`: a llama spit toward the target's
 /// lower third, 1.5 fast, with 10 degrees of spread.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 fn spit(m: &mut Mob, who: Who, _power: f32, cx: &mut Cx) {
     let Some(t) = cx.w.target_info(who) else {
         return;

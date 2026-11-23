@@ -86,6 +86,8 @@ impl Game<'_> {
         }
     }
 
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn elder_guardian_geometry(&self, left: i32, alpha: f64, out: &mut Vec<Vertex>) {
         let Some(kind) = self.res.mob_types().get("minecraft:elder_guardian") else {
             return;
@@ -131,6 +133,8 @@ impl Game<'_> {
     }
     /// The ominous banner a raid captain wears on its head: the banner model
     /// with its eight pattern layers (`CustomHeadLayer`).
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn captain_banner_geometry(
         &self,
         mob: &Mob,

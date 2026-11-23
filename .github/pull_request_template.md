@@ -38,7 +38,9 @@
 ## Vanilla reference
 
 <!-- The vanilla classes and methods this follows (tools/rea_vanilla.py), and the harness that checks it.
-     "Horizon-only" for a feature vanilla doesn't have; "none" for tooling or docs. -->
+     "Horizon-only" for a feature vanilla doesn't have; "none" for tooling or docs. For a parity fix, also answer:
+     - Which sibling paths share this vanilla rule?
+     - Which production-route check fails before the fix, and what does it observe? -->
 
 ## Self-check
 

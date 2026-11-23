@@ -5,6 +5,9 @@
 //! notes, redstone dust, totem, end rod, biome ash and spores, falling leaves,
 //! spells and dragon breath. Constructors, ticks, sizes, colours and light
 //! follow the vanilla classes; sprite sets come from `particles/*.json`.
+// Raw trig is fine here: rendering, sound or UI math, not simulation (#18123).
+#![allow(clippy::disallowed_methods)]
+
 use crate::{
     blocks::{BlockFacts, Fluid},
     fast_hash::FxHashMap,

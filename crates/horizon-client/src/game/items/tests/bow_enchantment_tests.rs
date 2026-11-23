@@ -52,6 +52,8 @@ fn game_with_player(root: &std::path::Path) -> Game<'static> {
 
 /// The horizontal heading `p` was shot with, in degrees:
 /// `Projectile.shootFromRotation` sends it along `(-sin(yaw), ..., cos(yaw))`.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 fn heading(p: &horizon_client::projectiles::Projectile) -> f32 {
     (-p.velocity.x as f32)
         .atan2(p.velocity.z as f32)

@@ -594,6 +594,8 @@ pub fn animate(m: &mut Mob) {
     }
 }
 /// `AllayModel.setupAnim`.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 pub fn anim(m: &Mob, s: &AnimState, p: &mut Poses) {
     use std::f32::consts::PI;
     let (speed, pos) = (s.speed, s.pos);

@@ -30,6 +30,8 @@ fn default_cloud_particle() -> ParticleOptions {
 /// `AreaEffectCloud.clientTick`: while waiting, now and then two particles
 /// near the middle; then about one per square block of the disc, drifting
 /// (an entity effect stays still).
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 pub(super) fn cloud_client_tick(
     particles: &mut horizon_client::particles::ParticleEngine,
     at: [f64; 3],

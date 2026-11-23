@@ -304,6 +304,8 @@ fn wrap(d: f32) -> f32 {
 }
 /// `PhantomMoveControl`: bank toward the move target, faster on a straight
 /// line.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 pub fn move_control(m: &mut Mob) {
     let mut speed = m.attrs.speed as f32;
     if m.horizontal_collision {

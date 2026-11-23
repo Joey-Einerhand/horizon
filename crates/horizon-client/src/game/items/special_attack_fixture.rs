@@ -15,6 +15,8 @@ use horizon_core::geometry::Vec3;
 use serde_json::Value;
 
 impl Game<'_> {
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn fixture_special_attack(&mut self, op: &Value) -> Result<Vec<String>> {
         let kind = op["target"]
             .as_str()

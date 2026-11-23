@@ -6,6 +6,9 @@
 //! vanilla renderer. Faces carry their tint and world normal: the entity
 //! shader (and a shader pack) applies `minecraft_mix_light` from the normal, as
 //! vanilla's does.
+// Raw trig is fine here: rendering, sound or UI math, not simulation (#18123).
+#![allow(clippy::disallowed_methods)]
+
 use crate::{
     Result,
     bidi::visual,

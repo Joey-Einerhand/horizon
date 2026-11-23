@@ -25,6 +25,9 @@
 //! The report also has wire bytes in and out (`bytes_in`, `bytes_out`, per bot and in total, after
 //! compression) and join-time percentiles (`join_time`: p50, p99 and max in milliseconds).
 
+// Raw trig is fine in this crate: a load-test client that walks bots around, not the game simulation (#18123).
+#![allow(clippy::disallowed_methods)]
+
 use horizon_protocol::{
     PROTOCOL_VERSION,
     buf::{Reader, Writer},

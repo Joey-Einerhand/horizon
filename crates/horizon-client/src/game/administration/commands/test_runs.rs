@@ -84,6 +84,8 @@ impl Game<'_> {
 
     /// `StructureUtils.lookedAtTestPos`: the test whose box the player's
     /// view ray (250 blocks) meets, the nearest to the source.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn looked_at_test(&self, center: Pos) -> Option<Pos> {
         let player = self.player.as_ref()?;
         let eye = [

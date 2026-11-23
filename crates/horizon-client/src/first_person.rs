@@ -192,6 +192,8 @@ pub fn item_pose(left: bool, inverse_height: f32, attack: f32, pose: ItemPose) -
 /// the swing's turns kept as 1.7.10 kept them (hitting while blocking swings
 /// the sword). None for the poses 1.8.9 had no form of (crossbow, trident,
 /// spear, brush), which stay modern.
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 pub fn legacy_item_pose(
     left: bool,
     inverse_height: f32,

@@ -321,6 +321,8 @@ impl Boat {
     }
     /// `AbstractBoat.tickBubbleColumn`: on a client, the wobble grows by 0.05 a
     /// tick while the synched bubble time runs and fades by 0.1 otherwise.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub fn tick_bubble_wobble(&mut self) {
         self.tick_count += 1;
         if self.bubble_time > 0 {

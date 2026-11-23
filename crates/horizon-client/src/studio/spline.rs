@@ -242,6 +242,8 @@ fn catmull_rom_dvec3(
 }
 
 /// Helper converting Glam Quat back into Euler angles (yaw, pitch, roll).
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 fn quat_to_euler(q: glam::Quat, base_yaw1: f32, base_yaw2: f32) -> (f32, f32, f32) {
     // Forward vector (0, 0, -1) transformed by quaternion
     let forward = q * glam::Vec3::new(0.0, 0.0, -1.0);

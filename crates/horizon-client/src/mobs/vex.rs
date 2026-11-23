@@ -198,6 +198,8 @@ fn copyable(w: &crate::mobs::MobWorld, t: Who) -> bool {
     }
 }
 /// `VexMoveControl`: accelerate straight at the wanted point.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 pub fn move_control(m: &mut Mob) {
     if m.ai.mov.operation != Operation::MoveTo {
         return;

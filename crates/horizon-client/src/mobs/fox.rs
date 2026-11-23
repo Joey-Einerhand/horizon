@@ -1376,6 +1376,8 @@ struct Perch {
     looks_remaining: i32,
 }
 impl Perch {
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn reset_look(&mut self, m: &mut Mob) {
         let angle = std::f64::consts::TAU * m.random.next_double();
         self.rel = [angle.cos(), angle.sin()];

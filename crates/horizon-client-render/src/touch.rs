@@ -10,6 +10,9 @@
 //! reads ([`PadState`]). Each finger gets a role when it lands (the joystick or
 //! D-pad, a button, or a look gesture on the world) and keeps it until it
 //! lifts, so moving, looking and pressing never take each other's fingers.
+// Raw trig is fine here: rendering, sound or UI math, not simulation (#18123).
+#![allow(clippy::disallowed_methods)]
+
 pub mod aim;
 mod custom;
 mod draw;

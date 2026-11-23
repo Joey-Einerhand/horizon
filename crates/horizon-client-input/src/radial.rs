@@ -464,6 +464,8 @@ impl Pages {
     }
 }
 /// The slot a stick points at: 0 is up, then clockwise. `None` under `tilt`.
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 pub fn slot_at(stick: [f32; 2], tilt: f32) -> Option<usize> {
     let length = stick_length(stick);
     if !length.is_finite() || length < tilt {
@@ -474,6 +476,8 @@ pub fn slot_at(stick: [f32; 2], tilt: f32) -> Option<usize> {
 }
 
 /// `slot` is still what the stick points at, a little past its wedge and down to `keep`.
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 fn keeps_slot(stick: [f32; 2], keep: f32, slot: usize) -> bool {
     let length = stick_length(stick);
     if !length.is_finite() || length < keep {

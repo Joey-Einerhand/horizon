@@ -321,6 +321,8 @@ impl Game<'_> {
         }
     }
     /// `EvokerFangsRenderer`: the jaws snapping up and closing.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn fangs_geometry(
         &self,
         camera: glam::DVec3,

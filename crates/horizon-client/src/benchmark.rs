@@ -794,6 +794,8 @@ pub fn view_chunks(distance: u64) -> u64 {
 }
 
 /// Vanilla's yaw facing from `start` to `end`.
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 fn yaw(start: [f64; 3], end: [f64; 3]) -> f64 {
     (-(end[0] - start[0])).atan2(end[2] - start[2]).to_degrees()
 }

@@ -159,6 +159,8 @@ impl Rotation {
     }
 
     /// Right-handed rotation about a finite nonzero `axis` by `angle_rad`.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub fn from_axis_angle(axis: Vec3, angle_rad: f64) -> Result<Self, Refused> {
         if !angle_rad.is_finite() {
             return Err(Refused::NonFinite);

@@ -2,6 +2,9 @@
 //! with water vision, lava, powder snow, blindness), the camera fog type
 //! (`Camera.getFluidInCamera`) and the fog colour (`computeFogColor`: sunrise
 //! tint, sky-colour mix, void darkness, water-vision brightening).
+// Raw trig is fine here: rendering, sound or UI math, not simulation (#18123).
+#![allow(clippy::disallowed_methods)]
+
 use crate::{
     biome::Biomes,
     blocks::{BlockFacts, Fluid},

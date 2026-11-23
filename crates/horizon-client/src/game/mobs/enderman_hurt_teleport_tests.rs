@@ -86,6 +86,8 @@ fn enderman(game: &Game, id: u32, at: Vec3, seed: i64) -> Mob {
 /// blast hurts has teleported (or drawn not to) when the explosion returns.
 #[test]
 #[ignore = "daily"]
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 fn an_explosion_teleports_endermen_before_it_returns() {
     let root = std::path::PathBuf::from(std::env::var_os("HORIZON_TEST_RESOURCES").unwrap());
     let mut resources = None;

@@ -242,6 +242,8 @@ fn skull_texture<'a>(renderer: &ItemRenderer, kind: &'a str) -> &'a str {
     }
 }
 /// `SkullModelBase.setupAnim` for a head at `animation` (yRot = xRot = 0).
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 fn skull_pose(kind: &str, animation: f32) -> impl Fn(&str, &mut [f32; 9]) + '_ {
     move |name: &str, p: &mut [f32; 9]| match (kind, name) {
         (_, "head") => {
@@ -276,12 +278,16 @@ fn chest_pose(open: f32) -> impl Fn(&str, &mut [f32; 9]) {
     }
 }
 /// `BannerFlagModel.setupAnim(0)`.
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 fn flag_pose(name: &str, p: &mut [f32; 9]) {
     if name == "flag" {
         p[3] = (-0.0125 + 0.01 * (2.0 * PI * 0.0f32).cos()) * PI;
     }
 }
 /// `BookModel.setupAnim`.
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 fn book_pose(openness: f32, flip1: f32, flip2: f32) -> impl Fn(&str, &mut [f32; 9]) {
     move |name: &str, p: &mut [f32; 9]| match name {
         "left_lid" => p[4] = PI + openness,

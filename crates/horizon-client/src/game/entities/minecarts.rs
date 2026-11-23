@@ -1584,6 +1584,8 @@ impl Game<'_> {
         (vehicle, carts)
     }
     /// The rider's tick: the cart moves with the rider's input as its push.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn tick_cart_riding(&mut self, keys: Keys) -> bool {
         let Some(i) = self.carts.iter().position(|c| Some(c.id) == self.riding) else {
             return false;
@@ -2096,6 +2098,8 @@ impl Game<'_> {
     }
     /// `AbstractMinecartRenderer` (old render): on the rail between the
     /// front and back points, pitched on slopes, with the display block.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(in crate::game) fn cart_geometry(
         &self,
         camera: glam::DVec3,

@@ -78,6 +78,8 @@ pub fn tick<L: SiegeLevel + ?Sized>(l: &mut L) {
 /// `VillageSiege.tryToSetupSiege`: the first player standing in a village
 /// picks a spot 32 blocks away (ten tries); true when one stood in a
 /// village, even if no spot was found.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 pub fn try_to_setup<L: SiegeLevel + ?Sized>(l: &mut L) -> bool {
     let centers = l.village_centers();
     for player in l.players() {

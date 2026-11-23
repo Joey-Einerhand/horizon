@@ -23,6 +23,9 @@
 //! Linux and on an Apple silicon Mac alike. They are JVM methods, not ports of
 //! a vanilla class, so the comments below name the Java function they compute.
 
+// The Java Math adapter: the raw calls here are the approved route (#18123).
+#![allow(clippy::disallowed_methods)]
+
 pub mod fdlibm;
 
 /// `Math.sin` and `Math.cos` as HotSpot computes them on AArch64: fdlibm's

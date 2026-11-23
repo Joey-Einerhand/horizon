@@ -8,6 +8,9 @@
 //! Read so far: [`Targets`] (what a modifier aims at), and the [`BiomeModifier`] and
 //! [`DimensionModifier`] environment attribute layers, and the scripting expressions
 //! ([`expr::Program`]) their values and other files use.
+// Raw trig is fine in this crate: it draws, plays or reads input, it does not simulate (#18123).
+#![allow(clippy::disallowed_methods)]
+
 mod attributes;
 pub mod colors;
 pub mod creative_tabs;

@@ -753,6 +753,8 @@ mod tests {
     }
 
     #[test]
+    // Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+    #[allow(clippy::disallowed_methods)]
     fn flat_lights_match_joml() {
         // new Matrix4f().rotationY(-PI/8).rotateX(3PI/4).transformDirection(L0).
         let (l0, _) = items_flat_lights();

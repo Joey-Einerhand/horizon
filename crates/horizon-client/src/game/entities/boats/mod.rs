@@ -1208,6 +1208,8 @@ impl Game<'_> {
     }
     /// `getDismountLocationForPassenger` for a passenger `width` wide
     /// facing `yaw`.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn boat_dismount_target(&self, b: &Boat, width: f64, yaw: f32) -> Vec3 {
         let r = yaw.to_radians();
         let distance = (WIDTH * std::f64::consts::SQRT_2 + width + 1.0e-5) / 2.0;
@@ -1661,6 +1663,8 @@ impl Game<'_> {
         Some(destroyed)
     }
     /// AbstractBoatRenderer.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn boat_geometry(&self, camera: glam::DVec3, alpha: f64, out: &mut Vec<Vertex>) {
         let a = alpha as f32;
         let range = super::entity_culling::default_range(
@@ -1876,6 +1880,8 @@ mod tests {
     /// `AbstractBoat.tickBubbleColumn` on a client: the wobble grows while the
     /// bubble time runs and fades after.
     #[test]
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn the_wobble_grows_while_the_bubble_time_runs_and_fades_after() {
         let mut b = boat();
         b.bubble_time = BUBBLE_TIME;

@@ -6,6 +6,9 @@
 //! Tiles are filled nearest first within a time budget and rescanned after
 //! block changes; the image is recomposed only when the view moved or a tile
 //! changed.
+// Raw trig is fine here: rendering, sound or UI math, not simulation (#18123).
+#![allow(clippy::disallowed_methods)]
+
 use crate::{
     blocks::{BlockFacts, Fluid, MAP_COLORS},
     chunk::Chunk,

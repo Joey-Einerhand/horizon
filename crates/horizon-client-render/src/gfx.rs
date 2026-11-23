@@ -1,4 +1,7 @@
 //! GPU renderer: terrain, sky, block outline and HUD. Camera-relative section origins keep world coordinates precise.
+// Raw trig is fine here: rendering, sound or UI math, not simulation (#18123).
+#![allow(clippy::disallowed_methods)]
+
 use crate::{
     Result,
     block_entity_render::{StaticCacheFrameStats, StaticSectionRevision, StaticSectionSnapshot},

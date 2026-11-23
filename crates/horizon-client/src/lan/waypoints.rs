@@ -1828,6 +1828,8 @@ mod tests {
     /// A crowd of `n` bots in a few chunks, `movers` percent of them walking, the moves worked out by
     /// receiver: (updates sent, ticks). Run under `perf stat -e instructions:u,cache-misses:u,
     /// L1-dcache-load-misses:u` with `--ignored --nocapture`: the cost of the manager alone.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn crowd(n: u32, ticks: u32, movers: u32) -> (usize, usize) {
         let mut seed = 0x1234_5678_9abc_def1_u64;
         let mut next = move |m: u64| {

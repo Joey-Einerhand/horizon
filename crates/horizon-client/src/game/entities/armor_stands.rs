@@ -1815,6 +1815,8 @@ impl Game<'_> {
         }
     }
     /// ArmorStandRenderer: the stand with its default pose, then armor layers.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn armor_stand_geometry(
         &self,
         camera: glam::DVec3,

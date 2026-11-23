@@ -107,6 +107,8 @@ impl Game<'_> {
         self.add_primed_tnt(pos, rot, fuse, owner, guest);
     }
     /// Adds primed TNT at the block's bottom centre, pushed along `rot`.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn add_primed_tnt(
         &mut self,
         pos: BlockPos,

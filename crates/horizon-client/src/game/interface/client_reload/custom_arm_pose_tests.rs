@@ -46,6 +46,8 @@ fn arms(mob: &Mob) -> [[f32; 9]; 2] {
 
 #[test]
 #[ignore = "daily"]
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 fn registered_angles_reach_local_remote_and_humanoid_before_species_animation() {
     with_client_game(|game| {
         game.player = Some(PlayerMotion::new(game.motion, Vec3::ZERO).unwrap());

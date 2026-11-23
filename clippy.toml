@@ -8,6 +8,11 @@
 # (`SceneCollisions::resolve`, `resolve_in_border`) are listed too: they only
 # delegate to the banned entries, and leaving them free would reopen the door
 # they close.
+#
+# The float trig entries fence raw `f32`/`f64` trig out of simulation code: vanilla computes its
+# angles with `Mth`'s sine table or `java.lang.Math`, and a platform `sin` differs in the last bits
+# (#13737, #18150, #19260). Crates and modules that only draw, play sound or read input allow it at
+# their root; legacy simulation sites carry `// parity: unaudited raw trig (#18123)`, the audit list.
 disallowed-methods = [
     { path = "horizon_client_input::held::HeldKeys::contains", reason = "use `held(Action::..)`, or `raw` for a key that is no mapping's default", allow-invalid = true },
     { path = "horizon_client_render::collisions::SceneCollisions::resolve", reason = "go through `horizon_client::move_gate` (arismoko/horizon#2414): arm the move, then resolve through the gate", allow-invalid = true },
@@ -16,4 +21,20 @@ disallowed-methods = [
     { path = "horizon_client_render::collisions::SceneCollisions::resolve_with_context", reason = "go through `horizon_client::move_gate` (arismoko/horizon#2414): arm the move, then resolve through the gate", allow-invalid = true },
     { path = "horizon_client_render::collisions::EntityCollisions::resolve", reason = "go through `horizon_client::move_gate` (arismoko/horizon#2414): arm the move, then resolve through the gate", allow-invalid = true },
     { path = "horizon_client_render::collisions::EntityCollisions::resolve_with_context", reason = "go through `horizon_client::move_gate` (arismoko/horizon#2414): arm the move, then resolve through the gate", allow-invalid = true },
+    { path = "f32::sin", reason = "use the Mth table (`horizon_core::geometry::trig`) or Java's Math (`horizon_core::jmath`) as vanilla does; raw float trig drifts from vanilla (#18123)", allow-invalid = true },
+    { path = "f32::cos", reason = "use the Mth table (`horizon_core::geometry::trig`) or Java's Math (`horizon_core::jmath`) as vanilla does; raw float trig drifts from vanilla (#18123)", allow-invalid = true },
+    { path = "f32::tan", reason = "use the Mth table (`horizon_core::geometry::trig`) or Java's Math (`horizon_core::jmath`) as vanilla does; raw float trig drifts from vanilla (#18123)", allow-invalid = true },
+    { path = "f32::asin", reason = "use the Mth table (`horizon_core::geometry::trig`) or Java's Math (`horizon_core::jmath`) as vanilla does; raw float trig drifts from vanilla (#18123)", allow-invalid = true },
+    { path = "f32::acos", reason = "use the Mth table (`horizon_core::geometry::trig`) or Java's Math (`horizon_core::jmath`) as vanilla does; raw float trig drifts from vanilla (#18123)", allow-invalid = true },
+    { path = "f32::atan", reason = "use the Mth table (`horizon_core::geometry::trig`) or Java's Math (`horizon_core::jmath`) as vanilla does; raw float trig drifts from vanilla (#18123)", allow-invalid = true },
+    { path = "f32::atan2", reason = "use the Mth table (`horizon_core::geometry::trig`) or Java's Math (`horizon_core::jmath`) as vanilla does; raw float trig drifts from vanilla (#18123)", allow-invalid = true },
+    { path = "f32::sin_cos", reason = "use the Mth table (`horizon_core::geometry::trig`) or Java's Math (`horizon_core::jmath`) as vanilla does; raw float trig drifts from vanilla (#18123)", allow-invalid = true },
+    { path = "f64::sin", reason = "use the Mth table (`horizon_core::geometry::trig`) or Java's Math (`horizon_core::jmath`) as vanilla does; raw float trig drifts from vanilla (#18123)", allow-invalid = true },
+    { path = "f64::cos", reason = "use the Mth table (`horizon_core::geometry::trig`) or Java's Math (`horizon_core::jmath`) as vanilla does; raw float trig drifts from vanilla (#18123)", allow-invalid = true },
+    { path = "f64::tan", reason = "use the Mth table (`horizon_core::geometry::trig`) or Java's Math (`horizon_core::jmath`) as vanilla does; raw float trig drifts from vanilla (#18123)", allow-invalid = true },
+    { path = "f64::asin", reason = "use the Mth table (`horizon_core::geometry::trig`) or Java's Math (`horizon_core::jmath`) as vanilla does; raw float trig drifts from vanilla (#18123)", allow-invalid = true },
+    { path = "f64::acos", reason = "use the Mth table (`horizon_core::geometry::trig`) or Java's Math (`horizon_core::jmath`) as vanilla does; raw float trig drifts from vanilla (#18123)", allow-invalid = true },
+    { path = "f64::atan", reason = "use the Mth table (`horizon_core::geometry::trig`) or Java's Math (`horizon_core::jmath`) as vanilla does; raw float trig drifts from vanilla (#18123)", allow-invalid = true },
+    { path = "f64::atan2", reason = "use the Mth table (`horizon_core::geometry::trig`) or Java's Math (`horizon_core::jmath`) as vanilla does; raw float trig drifts from vanilla (#18123)", allow-invalid = true },
+    { path = "f64::sin_cos", reason = "use the Mth table (`horizon_core::geometry::trig`) or Java's Math (`horizon_core::jmath`) as vanilla does; raw float trig drifts from vanilla (#18123)", allow-invalid = true },
 ]

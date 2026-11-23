@@ -456,6 +456,8 @@ pub fn ghost(index: usize, left: i32, top: i32, big: bool, ghosts: &[GhostView])
 }
 
 /// `1 + 0.1 sin(t / 15 * PI)`, the squeeze of new recipes' buttons and tabs.
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 fn squeeze(time: f32) -> f32 {
     1.0 + 0.1 * f64::from(time / 15.0 * std::f32::consts::PI).sin() as f32
 }

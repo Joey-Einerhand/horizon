@@ -22,6 +22,8 @@ pub struct MinimapLook {
     pub north: Option<(f32, f32)>,
 }
 #[horizon_mod_api_macros::replaceable]
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 pub fn draw_minimap(
     batch: &mut HudBatch,
     atlas: &HudAtlas,

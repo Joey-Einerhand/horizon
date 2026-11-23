@@ -54,6 +54,8 @@ pub fn render_camera_path(
 }
 
 /// Draws a wireframe camera pyramid/frustum with an "up" indicator notch at the keyframe pose.
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 pub fn render_camera_frustum(kf: &CameraKeyframe, gizmos: &mut Gizmos, color: u32) {
     let apex = glam::DVec3::from_array(kf.position);
     let quat = kf.rotation_quat();

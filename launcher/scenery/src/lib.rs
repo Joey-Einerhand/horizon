@@ -1,6 +1,9 @@
 //! The launcher's scenery: the pixel sunset scene, the themes' painted skies and Hypr Neon's
 //! rain, each a GPUI view of its own, and the glass plates that frost them. Kept apart from the
 //! launcher so its drawing compiles once and the launcher's own changes rebuild less.
+// Raw trig is fine in this crate: the launcher's drawn scenery (#18123).
+#![allow(clippy::disallowed_methods)]
+
 pub mod art;
 pub mod glass;
 pub mod rain;

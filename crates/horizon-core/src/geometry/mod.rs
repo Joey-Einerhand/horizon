@@ -280,6 +280,8 @@ impl Vec3 {
         Self::new((sy * cp) as f64, sp as f64, (cy * cp) as f64)
     }
     /// Return vanilla's (pitch, yaw) float pair in degrees.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub fn rotation(self) -> [f32; 2] {
         let yaw = ((-self.x).atan2(self.z) as f32) * trig::RAD_TO_DEG;
         let pitch = ((-self.y / self.length()).asin() as f32) * trig::RAD_TO_DEG;
@@ -695,6 +697,20 @@ fn next_down(value: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Clippy's raw trig fence (#18123) must catch both call forms: if it
+    // stops firing, these expectations go unfulfilled and Clippy fails.
+    #[test]
+    #[expect(clippy::disallowed_methods)]
+    fn raw_trig_fence_catches_method_calls() {
+        assert!(1.0f64.sin() > 0.0);
+    }
+
+    #[test]
+    #[expect(clippy::disallowed_methods)]
+    fn raw_trig_fence_catches_paths() {
+        assert!(f32::cos(0.0) > 0.0);
+    }
 
     #[test]
     fn floor_i32_is_mths_floor() {

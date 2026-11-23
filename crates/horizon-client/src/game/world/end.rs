@@ -162,6 +162,8 @@ struct EndFlash {
     y_angle: f32,
 }
 impl EndFlash {
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn tick(&mut self, clock: i64) {
         let seed = clock.div_euclid(600);
         if self.seed != Some(seed) {
@@ -884,6 +886,8 @@ impl Game<'_> {
 
     /// The first gateway of the shuffled ring (EnderDragonFight constructor
     /// and spawnNewGateway).
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn first_gateway(&self) -> [i32; 3] {
         let mut gateways: Vec<i32> = (0..20).collect();
         let mut random = LegacyRandom::new(self.level.seed);
@@ -1476,6 +1480,8 @@ impl Game<'_> {
 
     /// `LevelEventHandler` 2003: a shattered eye's item crumbs and two rings
     /// of portal particles drawn in towards it.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn eye_break_particles(&mut self, pos: [i32; 3]) {
         let (x, y, z) = (
             f64::from(pos[0]) + 0.5,
@@ -1533,6 +1539,8 @@ impl Game<'_> {
         }
     }
     /// ThrownItemRenderer: the ender eye item facing the camera.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn eye_geometry(&self, camera: glam::DVec3, out: &mut Vec<Vertex>) {
         let Some(r) = self.gui.atlas.sprites.get("item/ender_eye").copied() else {
             return;

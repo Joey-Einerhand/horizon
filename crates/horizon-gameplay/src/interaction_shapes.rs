@@ -88,6 +88,8 @@ mod tests {
     /// cauldron at [0, 100, 2] at the height of its rim, inside the inside shape's top plane:
     /// the inside shape is entered through its top face.
     #[test]
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn a_ray_over_a_cauldron_enters_its_inside_through_the_top() {
         let boxes: Vec<[f64; 6]> = boxes("minecraft:cauldron", None)
             .iter()

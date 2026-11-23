@@ -371,6 +371,8 @@ pub fn anim(m: &Mob, s: &State, p: &mut Poses, animations: &HashMap<String, Anim
 #[cfg(test)]
 mod tests {
     #[test]
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn the_highest_arc_reaches_a_target_within_range() {
         // Angle 80 degrees: v0^2 = r^2 g / (r sin 2a - 2 y cos^2 a).
         let g = 0.08;

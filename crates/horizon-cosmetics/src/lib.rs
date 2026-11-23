@@ -9,6 +9,9 @@
 //! style is a small mark and a line colour, with no model. This crate
 //! reads and checks items and poses them; the game draws them.
 
+// Raw trig is fine in this crate: it draws, plays or reads input, it does not simulate (#18123).
+#![allow(clippy::disallowed_methods)]
+
 pub mod account;
 mod emote;
 mod feed;

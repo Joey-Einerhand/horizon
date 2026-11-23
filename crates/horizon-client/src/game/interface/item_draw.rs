@@ -793,6 +793,8 @@ impl Game<'_> {
         self.item_entity_geometry(camera, taken, out);
     }
 
+    // Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+    #[allow(clippy::disallowed_methods)]
     fn item_entity_geometry<'a>(
         &self,
         camera: glam::DVec3,

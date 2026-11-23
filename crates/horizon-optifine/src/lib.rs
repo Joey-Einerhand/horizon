@@ -14,6 +14,9 @@
 //! source (THIRD_PARTY_NOTICES.md); `fusion` from Fusion's wiki and FusionExamples' MIT-licensed
 //! layout templates (THIRD_PARTY_NOTICES.md). No OptiFine or Fusion code was read.
 
+// Raw trig is fine in this crate: it draws, plays or reads input, it does not simulate (#18123).
+#![allow(clippy::disallowed_methods)]
+
 pub mod blink;
 pub mod cem;
 pub mod cit;

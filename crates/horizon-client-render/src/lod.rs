@@ -1,5 +1,8 @@
 //! Bounded voxel-column terrain for distances beyond the resident chunk area.
 //! Far tiles never enter World, lighting, simulation or the section cave graph.
+// Raw trig is fine here: rendering, sound or UI math, not simulation (#18123).
+#![allow(clippy::disallowed_methods)]
+
 use crate::{
     blocks::BlockFacts,
     chunk::{Chunk, MIN_Y},

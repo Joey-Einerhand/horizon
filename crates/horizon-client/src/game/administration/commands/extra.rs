@@ -665,6 +665,8 @@ impl Game<'_> {
     }
     /// `Entity.pick(10, 1, false)`: the first non-air block on the view ray,
     /// else the block at the ray's end.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn test_pick_block(&self) -> [i32; 3] {
         use horizon_core::{
             geometry::{Vec3, traverse_blocks},

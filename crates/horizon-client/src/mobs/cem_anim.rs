@@ -569,6 +569,8 @@ impl Saved {
     }
 }
 
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 fn params(m: &Mob, s: &State, frame: &Frame, rule_index: f32, slots: &mut [f32]) {
     let max_health = super::finalize::max_health(m);
     let (dx, dy, dz) = (

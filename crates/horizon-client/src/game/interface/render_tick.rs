@@ -135,6 +135,8 @@ impl Game<'_> {
     pub(super) fn end_skybox(&self) -> bool {
         self.dimension_type().skybox == Skybox::End
     }
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn forward(&self) -> [f64; 3] {
         let (yaw, pitch) = (
             f64::from(self.yaw).to_radians(),
@@ -275,6 +277,8 @@ impl Game<'_> {
     }
     /// `FogRenderer.computeFogColor`'s night vision brightenFactor:
     /// `GameRenderer.nightVisionScale`, but not while Darkness is on.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn fog_night_vision(&self) -> f32 {
         let partial = self.clock.fraction() as f32;
         match self.potions.effects.get("night_vision") {

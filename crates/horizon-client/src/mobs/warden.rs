@@ -1057,6 +1057,8 @@ pub fn heart_animation(m: &Mob, partial: f32) -> f32 {
 // ---- model ----
 
 /// `WardenModel.setupAnim`.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 pub fn anim(m: &Mob, s: &State, p: &mut Poses, animations: &HashMap<String, Animation>) {
     p.xrot("head", s.x_rot.to_radians());
     p.yrot("head", s.y_rot.to_radians());

@@ -1,6 +1,9 @@
 //! 2D overlay: one atlas holding GUI sprites, the bitmap font, item and block
 //! textures, and a batch of textured quads in GUI pixels (vanilla's automatic
 //! GUI scale is applied when drawing).
+// Raw trig is fine here: rendering, sound or UI math, not simulation (#18123).
+#![allow(clippy::disallowed_methods)]
+
 use crate::{Result, resource_source::ResourceSource};
 use horizon_assets::animation::AnimationMetadata;
 use smallvec::SmallVec;

@@ -475,6 +475,8 @@ mod orb_tests {
     use super::orb_billboard_radius;
 
     #[test]
+    // Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+    #[allow(clippy::disallowed_methods)]
     fn sphere_contains_the_asymmetric_billboard_including_vertex_rounding() {
         use glam::Vec3;
         use horizon_client::entities::{ORB_QUAD, ORB_QUAD_SCALE};

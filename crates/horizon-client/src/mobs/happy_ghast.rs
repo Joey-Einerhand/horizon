@@ -540,6 +540,8 @@ impl Goal for FloatAround {
     }
 }
 /// What a rider asks (`getRiddenInput`, `tickRidden`).
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 pub fn ridden(m: &mut Mob) {
     let Some(r) = m.rider else { return };
     // tickRidden: turn 8% of the way toward the rider's yaw; pitch half of theirs.

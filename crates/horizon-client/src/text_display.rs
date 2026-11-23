@@ -601,6 +601,8 @@ mod tests {
     }
 
     #[test]
+    // Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+    #[allow(clippy::disallowed_methods)]
     fn text_quads_face_the_side_they_read_from() {
         let mut d = TextDisplayData::default();
         // A fixed display at yaw 0 reads from the south: in front it faces

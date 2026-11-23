@@ -82,6 +82,8 @@ fn summon_pig(game: &mut Game<'_>, extra: &str) {
 }
 
 /// Look at the center of the first mob, as the attack fixture does.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 fn aim_at_mob(game: &mut Game<'_>) {
     let center = game.mobs[0].center();
     let eye = game.eye_position().expect("player");

@@ -546,6 +546,8 @@ impl Game<'_> {
     /// `extractEntityInInventoryFollowsMouse` for a mob: depth-sorted,
     /// back-face-culled quads turned toward the cursor.
     #[allow(clippy::too_many_arguments)]
+    // Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+    #[allow(clippy::disallowed_methods)]
     fn draw_mob_preview(
         &self,
         batch: &mut HudBatch,

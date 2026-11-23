@@ -299,6 +299,8 @@ fn a_stick_leaning_since_the_opening_still_waits_after_a_page_turn() {
 }
 
 #[test]
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 fn a_selected_slot_holds_past_its_wedge_and_under_the_tilt() {
     let t = Instant::now();
     let at = |degrees: f32, length: f32| {
@@ -329,6 +331,8 @@ fn a_selected_slot_holds_past_its_wedge_and_under_the_tilt() {
 }
 
 #[test]
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 fn the_tilts_follow_a_raised_deadzone_and_stay_in_reach() {
     let t = Instant::now();
     // A worn stick that reaches no further than this on any side.

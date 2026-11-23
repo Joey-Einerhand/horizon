@@ -332,6 +332,8 @@ pub fn motion_for_turn(dyaw: f64, dpitch: f64, look: LookOptions) -> (f64, f64) 
 
 /// Ease-in-out (a half cosine) over `t` in 0..=1: how much of a spread-out
 /// turn is done at that point of its time.
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 pub fn ease_in_out(t: f64) -> f64 {
     let t = t.clamp(0.0, 1.0);
     0.5 - 0.5 * (std::f64::consts::PI * t).cos()

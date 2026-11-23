@@ -85,6 +85,8 @@ impl PlayerSlot {
 /// `pitch`: the effect's `direction` turned by the look
 /// (`Entity.getLookQuaternion`: pitch about x, then yaw about y), scaled by
 /// `coordinate_scale` and the level's `magnitude`.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 pub(super) fn look_impulse(effect: &Value, level: u32, yaw: f32, pitch: f32) -> Vec3 {
     let vec3 = |key: &str| [0, 1, 2].map(|i| effect[key][i].as_f64().unwrap_or(0.0));
     let (d, scale) = (vec3("direction"), vec3("coordinate_scale"));

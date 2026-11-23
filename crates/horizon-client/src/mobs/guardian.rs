@@ -173,6 +173,8 @@ impl Goal for GuardianAttack {
 }
 /// `GuardianMoveControl`: swim straight at the wanted point with a wobble,
 /// looking ahead.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 pub fn move_control(m: &mut Mob) {
     let moving = m.ai.mov.operation == Operation::MoveTo && !m.ai.nav.is_done();
     if !moving {
@@ -505,6 +507,8 @@ pub fn beam(m: &Mob, partial: f32) -> Option<(f32, f32)> {
 /// `GuardianRenderer.renderBeam` from `eye` to `target` (world minus
 /// camera): the four rotating sides and the end cap. The texture's V
 /// repeats along the beam, so the sides are cut at each repeat.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 pub fn beam_geometry(
     eye: glam::Vec3,
     target: glam::Vec3,

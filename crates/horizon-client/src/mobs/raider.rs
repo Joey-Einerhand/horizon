@@ -265,6 +265,8 @@ pub fn heightmap_pos(w: &MobWorld, x: i32, z: i32) -> [i32; 3] {
 }
 
 /// `Vec3.yRot` (the angle is in radians, and the patrol goal passes 90).
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 fn y_rot(v: Vec3, angle: f32) -> Vec3 {
     let (cos, sin) = (f64::from(angle.cos()), f64::from(angle.sin()));
     Vec3::new(v.x * cos + v.z * sin, v.y, v.z * cos - v.x * sin)
@@ -862,6 +864,8 @@ mod tests {
         assert!(!is_captain(&m));
     }
     #[test]
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn long_distance_patrol_turns_by_ninety_radians() {
         // PatrollingMonster passes 90.0F to Vec3.yRot (radians).
         let v = y_rot(Vec3::new(10.0, 3.0, 0.0), 90.0);

@@ -288,6 +288,8 @@ mod tests {
     }
 
     #[test]
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn a_walk_meets_what_a_full_scan_meets_in_the_same_order() {
         let mut items = Vec::new();
         for i in 0..60 {

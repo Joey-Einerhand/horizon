@@ -491,6 +491,8 @@ impl Game<'_> {
     }
     /// Keep the player's model in step with the player (`LivingEntity.tick`
     /// body turning, `WalkAnimationState`, the swing and the pose).
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn tick_player_model(&mut self) {
         let (scale, nameplate) = self.player.as_mut().map_or_else(
             || (1.0, NameplateDistances::default()),
@@ -926,6 +928,8 @@ impl Game<'_> {
     /// `[x0, x1) x [y0, y1)`, `size` pixels per block, turned toward the
     /// cursor; drawn with a depth buffer and back-face culling.
     #[allow(clippy::too_many_arguments)]
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn draw_player_preview(
         &self,
         batch: &mut HudBatch,

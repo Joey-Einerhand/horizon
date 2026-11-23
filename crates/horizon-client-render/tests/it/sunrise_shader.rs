@@ -1,3 +1,6 @@
+// Raw trig is fine here: rendering, sound or UI math, not simulation (#18123).
+#![allow(clippy::disallowed_methods)]
+
 #[path = "../../src/gfx/sunrise_fan.rs"]
 mod sunrise_fan;
 

@@ -185,6 +185,8 @@ pub fn travel(
 }
 /// `tickRidden` and `getRiddenInput`: turn half way to the rider, swim along
 /// their look, faster in water (`getRiddenSpeed`), and dash on the jump.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 pub fn ridden(m: &mut Mob) {
     let Some(r) = m.rider else { return };
     let diff = super::living::wrap(r.yaw - m.yaw);
@@ -236,6 +238,8 @@ pub fn on_player_jump(m: &mut Mob, data: i32) -> bool {
 }
 /// `executeRidersJump` (with `handleStartJump`'s sound): along the rider's
 /// look, 1.2 in water and 0.5 on land.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 fn dash(m: &mut Mob, amount: f32) {
     let Some(r) = m.rider else { return };
     let (yaw, pitch) = (r.yaw.to_radians(), r.pitch.to_radians());
@@ -370,6 +374,8 @@ fn tick_attack_memory(m: &mut Mob) {
     }
 }
 /// `spawnBubbles`: more as it swims faster, from behind its mouth.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 fn bubbles(m: &mut Mob, events: &mut Vec<MobEvent>) {
     let v = m.velocity;
     let speed = (v.x * v.x + v.y * v.y + v.z * v.z).sqrt();

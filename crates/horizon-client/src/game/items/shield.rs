@@ -108,6 +108,8 @@ impl Game<'_> {
     }
     /// `LivingEntity.getItemBlockingWith` and the inputs of `applyItemBlocking`
     /// for an attack from `from` (`DamageSource.getSourcePosition`).
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn player_blocking(
         &self,
         from: Option<[f64; 3]>,

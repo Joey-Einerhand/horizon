@@ -5,6 +5,9 @@
 //! outline, nether portal swirl). Positions are clip-space quads; textures
 //! come from the shared 2D atlas and may repeat. A mod's overlay quads arrive in
 //! camera space ([`CameraQuads`]) and leave here in clip space too.
+// Raw trig is fine here: rendering, sound or UI math, not simulation (#18123).
+#![allow(clippy::disallowed_methods)]
+
 use crate::{
     effects::EffectInstance,
     hud::{Rect, TextureFlags},

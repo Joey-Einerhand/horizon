@@ -2149,6 +2149,8 @@ fn pick_view_vector(yaw: f32, pitch: f32) -> [f64; 3] {
     let v = horizon_world::view_direction::view_vector(pitch, yaw);
     [v.x, v.y, v.z]
 }
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 fn view_vector(yaw: f32, pitch: f32) -> [f64; 3] {
     let (y, p) = (f64::from(yaw).to_radians(), f64::from(pitch).to_radians());
     [-y.sin() * p.cos(), -p.sin(), y.cos() * p.cos()]
@@ -5975,6 +5977,8 @@ impl Game<'_> {
         )
     }
 
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn orb_geometry<'a>(
         &self,
         camera: glam::DVec3,
@@ -6053,6 +6057,8 @@ impl Game<'_> {
     /// Extract every particle group after the frame's entity, screen and hand callbacks.
     /// Item model callbacks can clear during extraction too: roll back only this tail of
     /// geometry (including GPU jobs and outlines), never the frame's ordinary entities.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn client_particle_geometry(
         &mut self,
         camera: glam::DVec3,

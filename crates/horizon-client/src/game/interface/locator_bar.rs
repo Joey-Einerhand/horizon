@@ -81,6 +81,8 @@ impl Game<'_> {
         Some(at(g.position, g.previous_position, PLAYER_EYES))
     }
     /// `LocatorBar.extractRenderState` from the last frame's camera.
+    // Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn locator_bar_draws(&self, gui_width: i32, gui_height: i32) -> Vec<GuiDraw> {
         let (Some((camera_pos, yaw, pitch, fov)), Some(p)) = (self.locator_camera, &self.player)
         else {

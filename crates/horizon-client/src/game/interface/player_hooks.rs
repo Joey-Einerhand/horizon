@@ -285,6 +285,8 @@ impl PlayerDraw for DrawPlayer<'_, '_> {
         )
     }
 
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn view(&self) -> View {
         let q = self.game.camera_orientation();
         let (right, up) = (

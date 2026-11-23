@@ -303,6 +303,8 @@ fn roar(m: &mut Mob, w: &MobWorld, events: &mut Vec<MobEvent>) {
     });
 }
 /// `RavagerModel.setupAnim`.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 pub fn anim(m: &Mob, s: &State, p: &mut Poses) {
     let stunned = if m.extra.counter2 > 0 {
         m.extra.counter2 as f32 - s.partial

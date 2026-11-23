@@ -265,6 +265,8 @@ pub fn offsets(m: &Mob, partial: f32) -> [[f64; 3]; COPIES] {
 }
 
 /// The wobble `IllusionerRenderer.submit` adds to each image.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 pub fn wobble(i: usize, age: f32) -> [f64; 3] {
     let i = i as f32;
     [

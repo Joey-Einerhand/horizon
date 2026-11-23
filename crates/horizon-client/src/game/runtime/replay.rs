@@ -626,6 +626,8 @@ impl Game<'_> {
         Ok(())
     }
 
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn tick_replay_player_model(&mut self) {
         if self.player_model.is_none() {
             // Initialization already updates the pose, walk animation and age.

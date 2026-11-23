@@ -7,6 +7,9 @@
 //! under the SIL Open Font License (`fonts/OFL-Geist.txt`). The launcher's night look and its
 //! Bricolage Grotesque are in [`night`]. Colours are `0xRRGGBB`; sizes
 //! are in logical pixels.
+// Raw trig is fine in this crate: it draws, plays or reads input, it does not simulate (#18123).
+#![allow(clippy::disallowed_methods)]
+
 use std::fmt::Write as _;
 use std::time::Duration;
 

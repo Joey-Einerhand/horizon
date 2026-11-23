@@ -52,6 +52,8 @@ impl ModelNormals {
             trusted: uniform,
         }
     }
+    // Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn rotation(x: f32, y: f32, z: f32) -> glam::Mat3 {
         // JOML derives cosine from the rounded sine, then retains quaternion length.
         // Assuming an exactly unit quaternion changes a packed normal by one byte.

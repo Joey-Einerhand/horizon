@@ -223,6 +223,8 @@ fn in_out_back(x: f32) -> f32 {
     let dt = 2.0 * x - 2.0;
     (dt * dt * (3.594_909_4 * dt + 2.594_909_4) + 2.0) / 2.0
 }
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 fn in_out_elastic(x: f32) -> f32 {
     if x == 0.0 {
         return 0.0;

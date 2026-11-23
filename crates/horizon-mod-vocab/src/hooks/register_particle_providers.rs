@@ -19,6 +19,8 @@ particle tick dispatches to the provider that owns it: no lookup, no scan over t
 ```rust,ignore
 struct Orbit;
 impl ParticleProvider for Orbit {
+    // Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+    #[allow(clippy::disallowed_methods)]
     fn tick(&self, particle: &mut ModParticle) {
         let t = f64::from(particle.age) * 0.4;
         particle.position = [

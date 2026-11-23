@@ -9,6 +9,9 @@
 //! and SDL's `SDL_hidapi_ps5.c`: a 47-byte block shared by both transports, sent as report 0x02
 //! over USB and as report 0x31 over Bluetooth, where a sequence tag leads it and a CRC-32 (seeded
 //! with the byte 0xA2) closes it.
+// Raw trig is fine in this crate: it draws, plays or reads input, it does not simulate (#18123).
+#![allow(clippy::disallowed_methods)]
+
 pub mod device;
 #[cfg(not(target_os = "ios"))]
 pub mod haptics;

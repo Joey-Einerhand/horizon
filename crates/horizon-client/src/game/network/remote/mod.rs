@@ -1660,6 +1660,8 @@ fn wrap_degrees(a: f32) -> f32 {
 /// `LivingEntity.tick`'s body target and `tickHeadTurn` for another player:
 /// the body turns toward where it walks (backwards when walking back), or to
 /// the look while the arm swings, and stays within 50 degrees of the look.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 fn remote_player_head_turn(m: &mut Mob) {
     let (dx, dz) = (m.position.x - m.previous.x, m.position.z - m.previous.z);
     let mut target = m.body_yaw;

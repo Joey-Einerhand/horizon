@@ -2074,6 +2074,8 @@ fn text_error(key: &str, args: &[Text]) -> horizon_client::command::CommandError
 
 /// `Entity.lookAt`: yaw and pitch from `from` towards `to`, the yaw wrapped
 /// to -180..180 as `Mth.wrapDegrees` does.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 pub(super) fn look_at(from: [f64; 3], to: [f64; 3]) -> [f32; 2] {
     let (dx, dy, dz) = (to[0] - from[0], to[1] - from[1], to[2] - from[2]);
     let horizontal = (dx * dx + dz * dz).sqrt();

@@ -378,6 +378,8 @@ fn summon_vexes(m: &mut Mob, cx: &mut Cx) {
 }
 /// `EvokerAttackSpellGoal.performSpellCasting`: a ring of fangs when the
 /// target is close, else a line of sixteen toward it.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 fn cast_fangs(m: &mut Mob, cx: &mut Cx) {
     let Some(t) = m.target_info(cx.w) else {
         return;

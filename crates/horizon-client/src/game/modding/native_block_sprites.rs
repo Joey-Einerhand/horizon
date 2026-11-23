@@ -302,6 +302,8 @@ mod quad_on_tests {
     /// (u0, v0), (u0, v1), (u1, v1), (u1, v0) in turn) is the one the material's own side shows
     /// at that point, and the corners wind counterclockwise seen from outside.
     #[test]
+    // Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+    #[allow(clippy::disallowed_methods)]
     fn a_copycat_face_shows_its_material_turned_as_the_model_turns_it() {
         let upright = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0];
         // u = b, v = 1 - a: a quarter turn (a log on its side).

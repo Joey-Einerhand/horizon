@@ -9,6 +9,9 @@
 //! and `room` to stay below the boss bars. [`Layout`] sizes it from the view (the scaling rule in
 //! its docs), and [`Look`] keeps the moments its motion runs from. Motion never selects: the
 //! stick does.
+// Raw trig is fine here: rendering, sound or UI math, not simulation (#18123).
+#![allow(clippy::disallowed_methods)]
+
 use crate::{
     hud::{HudAtlas, HudBatch},
     hud_kit::{

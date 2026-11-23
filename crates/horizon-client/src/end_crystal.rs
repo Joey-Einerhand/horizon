@@ -12,6 +12,8 @@ pub fn y(age: f32) -> f32 {
 /// `EndCrystalModel.setupAnim`: the base shown or not, the glass raised by
 /// half the bob (in model pixels) and the three cubes turned with
 /// `ModelPart.rotateBy`, which stores the composed rotation as ZYX angles.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 pub fn poses(model: &Part, age: f32, show_bottom: bool) -> Poses {
     let mut poses = Poses::new(model);
     poses.visible("base", show_bottom);

@@ -2,6 +2,9 @@
 //! with items at the format's limits (512 vertices, the densest trail): what the game does for
 //! them each frame, short of the GPU. `cargo run --release -p horizon-cosmetics --example fx_bench`
 
+// Raw trig is fine here: rendering, sound or UI math, not simulation (#18123).
+#![allow(clippy::disallowed_methods)]
+
 use glam::{DVec3, Mat4, Vec3};
 use horizon_cosmetics::follow::{self, Follow};
 use horizon_cosmetics::trail::{Budget, Emitter};

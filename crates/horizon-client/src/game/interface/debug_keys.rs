@@ -1020,6 +1020,8 @@ impl Game<'_> {
         self.clipboard.set(text);
     }
     /// The debug renderers' gizmos for a frame (`DebugRenderer.emitGizmos`).
+    // Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn debug_gizmos(&self, alpha: f32, camera: [f64; 3]) -> Gizmos {
         let mut g = Gizmos::default();
         self.bounding_box_gizmos(camera, &mut g);
@@ -1303,6 +1305,8 @@ impl Game<'_> {
 }
 
 /// The (x, y) rotations whose view vector is the step of a direction.
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 fn step_view(step: [i32; 3]) -> (f32, f32) {
     let [x, y, z] = step.map(f64::from);
     (

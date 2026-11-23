@@ -45,6 +45,8 @@ fn rope_hold_angles(now: (f32, f32), old: (f32, f32), alpha: f32) -> (f64, f64) 
         f64::from(lerp(now.1, old.1) * (std::f32::consts::PI / 180.0)),
     )
 }
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 fn rot_y(v: glam::DVec3, angle: f64) -> glam::DVec3 {
     let (s, c) = (angle.sin(), angle.cos());
     glam::DVec3::new(v.x * c + v.z * s, v.y, v.z * c - v.x * s)
@@ -1040,6 +1042,8 @@ impl Game<'_> {
         self.lit_entity(start..out.len());
     }
     /// `Player.getRopeHoldPosition` (and `LocalPlayer`'s in first person).
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn player_rope_hold(
         &self,
         p: &horizon_client::motion::PlayerMotion,

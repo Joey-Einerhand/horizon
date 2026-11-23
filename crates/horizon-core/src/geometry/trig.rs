@@ -1,4 +1,7 @@
 //! Vanilla's quantized float sine table with Java double-to-long indexing.
+// Builds vanilla's sine table and fdlibm's arc functions: the approved route (#18123).
+#![allow(clippy::disallowed_methods)]
+
 use std::sync::OnceLock;
 
 pub const DEG_TO_RAD: f32 = f32::from_bits(0x3c8e_fa35);

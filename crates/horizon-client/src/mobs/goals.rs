@@ -2234,6 +2234,8 @@ impl Goal for Tempt {
         }
     }
 }
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 fn look_angles(look: [f64; 3]) -> (f64, f64) {
     let yaw = (-look[0]).atan2(look[2]).to_degrees();
     let pitch = (-look[1]).asin().to_degrees();

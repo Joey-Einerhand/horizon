@@ -1434,6 +1434,8 @@ impl Game<'_> {
     }
     /// `FishingHookRenderer.getPlayerHandPos`: on the near plane in first
     /// person, beside the body otherwise.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn rod_hand_position(&self, alpha: f64, size: [u32; 2]) -> Option<glam::DVec3> {
         let p = self.player.as_ref()?;
         let right_arm = self.main_hand_rod() != self.settings.main_hand_left;
@@ -2359,6 +2361,8 @@ mod tests {
     }
 
     #[test]
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn cast_direction_uses_the_vanilla_sine_table() {
         // pitch 45: y = -(sin(-a) / -cos(-a)) with table entries built independently.
         let a = f64::from(-45.0_f32 * std::f32::consts::PI / 180.0);

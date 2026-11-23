@@ -60,6 +60,8 @@ impl Title {
     /// [`Title::draw`] with the item models, which draw the item icons of the
     /// Superflat screens the way `GuiGraphicsExtractor.item` does.
     #[allow(clippy::too_many_arguments)]
+    // Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+    #[allow(clippy::disallowed_methods)]
     pub fn draw_with_items(
         &self,
         atlas: &HudAtlas,

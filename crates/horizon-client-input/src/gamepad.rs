@@ -2178,6 +2178,8 @@ bind_key.hotbar.2:north
     }
 
     #[test]
+    // Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+    #[allow(clippy::disallowed_methods)]
     fn a_stick_holds_the_keys_of_its_nearest_heading() {
         // Forward, backward, left, right, by the heading counted from forward toward left.
         let headings = [

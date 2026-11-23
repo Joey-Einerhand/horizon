@@ -53,6 +53,8 @@ fn done_button(w: f32, h: f32) -> (f32, f32) {
 impl Game<'_> {
     /// `SignBlockEntity.getSlotPlayerIsFacing`: whether the player stands in
     /// front of the sign's text (within 90 degrees of its facing).
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn facing_sign_front(&self, pos: (i32, i32, i32)) -> bool {
         let Some(player) = self.player.as_ref() else {
             return true;

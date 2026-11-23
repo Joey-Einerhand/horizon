@@ -775,6 +775,8 @@ impl Game<'_> {
     }
     /// Level event 2013 (`ParticleUtils.spawnSmashAttackParticles`): dust
     /// pillars of the block at `pos`, a cluster over it and a ring 3.5 out.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn smash_dust(&mut self, pos: BlockPos, count: i32) {
         let state = self.world.block(pos.x, pos.y, pos.z);
         let Some((sprite, tint)) = self.particle_sprite(state, [pos.x, pos.y, pos.z]) else {

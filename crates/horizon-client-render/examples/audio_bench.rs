@@ -1,5 +1,8 @@
 //! Audio occlusion, attenuation and mixing benchmark.
 //! Run with: `cargo run --profile fast -p horizon-client-render --example audio_bench`
+// Raw trig is fine here: rendering, sound or UI math, not simulation (#18123).
+#![allow(clippy::disallowed_methods)]
+
 use horizon_client_render::resource_source::ResourceSource;
 use horizon_client_render::{
     audio::Audio,

@@ -53,6 +53,8 @@ const FULL_BRIGHT: u32 = 240 | 240 << 8;
 /// The turn `look` gives an entity standing in the box centred at `centre`:
 /// its body yaw, head yaw and head pitch (degrees, as the mob keeps them), and
 /// the pitch the whole entity is tilted by (`cameraOrientation`).
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 fn turn(look: GuiEntityLook, centre: [f32; 2]) -> (f32, f32, f32, f32) {
     match look {
         GuiEntityLook::At([x, y]) => {

@@ -214,6 +214,8 @@ fn unscaled_vehicle_attachment(r: &Mob, vehicle_width: f32) -> f64 {
     }
 }
 /// `Vec3.yRot(-yaw)` of an attachment point.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 fn rotated([x, y, z]: [f64; 3], yaw: f32) -> [f64; 3] {
     let a = -f64::from(yaw).to_radians();
     let (sin, cos) = (a.sin(), a.cos());

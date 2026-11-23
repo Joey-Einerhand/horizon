@@ -16,6 +16,9 @@
 //!
 //! Vanilla's own display lists (`hud_layout`, `screen_draw`) never use the kit: they stay
 //! exactly vanilla's.
+// Raw trig is fine here: rendering, sound or UI math, not simulation (#18123).
+#![allow(clippy::disallowed_methods)]
+
 pub mod fit;
 pub mod hint;
 pub mod icon;

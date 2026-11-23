@@ -93,6 +93,8 @@ impl StudioFreecam {
     }
 
     /// Update freecam position with movement inputs (WASD, Space, Shift).
+    // Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+    #[allow(clippy::disallowed_methods)]
     pub fn update_flight_motion(
         &mut self,
         forward: f64,

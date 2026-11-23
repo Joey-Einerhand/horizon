@@ -144,6 +144,8 @@ pub fn holder_state(w: &MobWorld, holder: Holder) -> Option<HolderState> {
 /// A rotation about the Y axis with exact trigonometry (the leash pull uses
 /// `turn_y`, vanilla's `Vec3.yRot`).
 #[cfg(test)]
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 fn rot_y(v: [f64; 3], angle: f64) -> [f64; 3] {
     let (s, c) = (angle.sin(), angle.cos());
     [v[0] * c + v[2] * s, v[1], v[2] * c - v[0] * s]

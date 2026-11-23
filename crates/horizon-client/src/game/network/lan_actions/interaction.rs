@@ -97,6 +97,8 @@ impl Game<'_> {
     /// eye. A boat, minecart, armor stand, item frame or painting is aimed at
     /// the point the client hit (the interact packet's location) when that
     /// is on it, else at its centre.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn look_at_entity(
         &mut self,
         gi: usize,

@@ -384,6 +384,8 @@ impl View<'_> {
         }
     }
     /// `GameRenderer.projectHorizonToScreen`.
+    // Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+    #[allow(clippy::disallowed_methods)]
     fn horizon(&self) -> f64 {
         if self.pitch <= -90.0 {
             return f64::NEG_INFINITY;

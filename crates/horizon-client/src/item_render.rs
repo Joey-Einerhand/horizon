@@ -96,6 +96,8 @@ impl Glint {
     /// translation(-o0, o1) * rotateZ(PI/18) * scale. The result repeats:
     /// the shader samples the dedicated glint texture with vanilla's
     /// repeating `GlintSampler`, so the UVs stay unwrapped.
+    // Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+    #[allow(clippy::disallowed_methods)]
     pub fn uv(&self, model: [f32; 2]) -> [f32; 2] {
         let ticks = Self::ticks(self.millis, self.speed);
         let offset0 = (ticks % 110_000) as f32 / 110_000.0;

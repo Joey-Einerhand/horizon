@@ -15,6 +15,9 @@
 //! - [`load_textures`]: the custom textures `texture.*` and `customTexture.*` name (3.4).
 //! - [`Macros`] and [`eval_condition`]: the macros packs test, and the `#if` arithmetic (1.5).
 
+// Raw trig is fine in this crate: it draws, plays or reads input, it does not simulate (#18123).
+#![allow(clippy::disallowed_methods)]
+
 mod biomes;
 mod block_ids;
 mod block_layers;

@@ -26,6 +26,8 @@ pub(in crate::game) struct Wheel {
 
 /// The slice under a point `(dx, dy)` from the middle (GUI pixels, y down) of a wheel of `n`:
 /// slice 0 is straight up, then clockwise. None in the dead middle or past the ring.
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 pub(in crate::game) fn slice_at(dx: f32, dy: f32, n: usize) -> Option<usize> {
     let r = dx.hypot(dy);
     if n == 0 || r < INNER || r > OUTER * 1.6 {
@@ -38,6 +40,8 @@ pub(in crate::game) fn slice_at(dx: f32, dy: f32, n: usize) -> Option<usize> {
 }
 
 /// A point at `radius` and `angle` (radians clockwise from up) around `(cx, cy)`.
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 fn at(cx: f32, cy: f32, radius: f32, angle: f32) -> [f32; 2] {
     [cx + radius * angle.sin(), cy - radius * angle.cos()]
 }

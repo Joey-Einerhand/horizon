@@ -688,6 +688,8 @@ impl Game<'_> {
     /// player's mark before the text, a name tag style's badge after it and its line under the
     /// background.
     #[allow(clippy::too_many_arguments)]
+    // Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+    #[allow(clippy::disallowed_methods)]
     fn styled_name_tag_quads(
         &self,
         o: glam::DVec3,

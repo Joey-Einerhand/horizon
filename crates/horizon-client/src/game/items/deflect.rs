@@ -206,6 +206,8 @@ impl Game<'_> {
 
     /// The deflection itself: the view as the new movement, the player as
     /// owner. False, and nothing changes, when the projectile refuses.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn turn_projectile(&mut self, i: usize) -> bool {
         let dir = view_vector(self.yaw, self.pitch);
         let (guest, owner_uuid) = (self.lan_acting, Some(self.acting_player_uuid()));

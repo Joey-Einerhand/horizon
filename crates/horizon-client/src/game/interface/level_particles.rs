@@ -382,6 +382,8 @@ impl Game<'_> {
     /// `LevelEventHandler.potionSplashParticles` (2002 with `Effect`, 2007
     /// with `InstantEffect`): eight splash potion crumbs, and a hundred
     /// spell particles in the potion's colour `data`, flung out in a disc.
+    // Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn potion_splash_particles(&mut self, pos: BlockPos, data: i32, instant: bool) {
         let ty = if instant {
             ParticleType::InstantEffect

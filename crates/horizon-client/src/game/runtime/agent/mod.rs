@@ -194,6 +194,8 @@ fn dist(a: [f64; 3], b: [f64; 3]) -> f64 {
 }
 /// Minecraft's yaw and pitch facing from `eye` towards `at` (yaw 0 faces +Z,
 /// 90 faces -X; positive pitch looks down).
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 pub(super) fn yaw_pitch(eye: [f64; 3], at: [f64; 3]) -> (f32, f32) {
     let d = [at[0] - eye[0], at[1] - eye[1], at[2] - eye[2]];
     let horizontal = (d[0] * d[0] + d[2] * d[2]).sqrt();
@@ -2205,6 +2207,8 @@ impl Game<'_> {
         }
     }
 
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn step_goto(&mut self, g: &mut Goto, timed_out: bool) -> Option<Value> {
         let p = self.position();
         let on_ground = self.player.as_ref().is_some_and(|p| p.ground.on_ground);

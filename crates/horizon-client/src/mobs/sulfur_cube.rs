@@ -1244,6 +1244,8 @@ pub fn tick_fuse(m: &mut Mob, events: &mut Vec<MobEvent>) {
 /// `SulfurCube.customServerAiStep` and the remaining cube additions:
 /// the timers, a swallowed block's stillness, buoyancy and
 /// facing, growing up, and players pushing it.
+// parity: unaudited raw trig (#18123)
+#[allow(clippy::disallowed_methods)]
 pub fn ai_step(m: &mut Mob, w: &MobWorld, events: &mut Vec<MobEvent>) {
     // primeTime's sound, then knockback's: a burning arrow plays both.
     let pending = m.extra.scratch[1];

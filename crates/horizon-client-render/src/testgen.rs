@@ -1,5 +1,8 @@
 //! Simple rolling terrain used only until the vanilla overworld generator is
 //! bound (`--test-terrain`). Not vanilla generation.
+// Raw trig is fine here: rendering, sound or UI math, not simulation (#18123).
+#![allow(clippy::disallowed_methods)]
+
 use crate::{chunk::Chunk, streaming::ChunkGenerator};
 use horizon_world::registry::BlockRegistry;
 

@@ -96,6 +96,8 @@ pub struct Flight {
 
 impl Game<'_> {
     /// Move the camera along the running flight; reply when it ends.
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     pub(super) fn advance_flight(&mut self) {
         let tick_ms = self
             .integrated

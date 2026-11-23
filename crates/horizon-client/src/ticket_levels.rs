@@ -1523,6 +1523,8 @@ mod tests {
     /// cargo test --release -p horizon-client-lib --lib ticket_levels::tests::levels_cost -- --ignored --nocapture
     #[test]
     #[ignore]
+    // parity: unaudited raw trig (#18123)
+    #[allow(clippy::disallowed_methods)]
     fn levels_cost() {
         for (players, spacing, distance) in [
             (1usize, 0, 10),

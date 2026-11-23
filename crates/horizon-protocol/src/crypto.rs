@@ -106,6 +106,8 @@ pub fn server_hash(server_id: &str, secret: &[u8], public_key: &[u8]) -> String 
 }
 
 /// MD5 (RFC 1321).
+// Raw trig is fine here: drawing, UI or input math, not simulation (#18123).
+#[allow(clippy::disallowed_methods)]
 pub fn md5(input: &[u8]) -> [u8; 16] {
     const S: [u32; 64] = [
         7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 5, 9, 14, 20, 5, 9, 14, 20, 5,
