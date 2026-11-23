@@ -7,6 +7,7 @@ use std::io;
 #[cfg(not(windows))]
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use wasmtime::{Engine, Module};
 
@@ -19,7 +20,12 @@ mod windows;
 /// an allowance, not a measured pack; see arismoko/horizon#2896.
 const LIMIT: u64 = 1024 * 1024 * 1024;
 
-#[derive(Debug, PartialEq, Eq)]
+/// How many modules [`ModuleCache::preload`] loads at once. Each compile already spreads its
+/// functions over every core, and the compile time limit assumes one compile has the machine, so a
+/// few at a time only fill the gaps between those parallel parts.
+const PARALLEL_LOADS: usize = 4;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Source {
     Compiled,
     Cached,
@@ -37,6 +43,8 @@ pub(crate) struct ModuleCache {
     pub(super) disabled: Option<String>,
     warned: AtomicBool,
     pub(crate) budget: crate::compile_budget::CompileBudget,
+    /// What [`Self::preload`] loaded, by cache key, for [`Self::load_or_compile`] to hand back.
+    preloaded: Mutex<std::collections::HashMap<String, (Module, Source)>>,
     #[cfg(test)]
     compiles: AtomicU64,
 }
@@ -126,6 +134,7 @@ impl ModuleCache {
             #[cfg(windows)]
             folder: prepared.ok(),
             budget: crate::compile_budget::CompileBudget::default(),
+            preloaded: Mutex::default(),
             #[cfg(test)]
             compiles: AtomicU64::new(0),
             warned: AtomicBool::new(disabled.is_some()),
@@ -198,6 +207,16 @@ impl ModuleCache {
             std::time::Duration,
         )>,
     ) -> wasmtime::Result<(Module, Source)> {
+        let key = Self::key(engine, bytes);
+        if let Some((module, source)) = self
+            .preloaded
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get(&key)
+            .filter(|(module, _)| Engine::same(module.engine(), engine))
+        {
+            return Ok((module.clone(), *source));
+        }
         if let Some(why) = &self.disabled {
             #[cfg(unix)]
             if let Some((_, timeout)) = child.as_ref() {
@@ -214,7 +233,7 @@ impl ModuleCache {
             let _ = why;
             return Module::new(engine, bytes).map(|module| (module, Source::Compiled));
         }
-        let path = self.entry_path(&Self::key(engine, bytes));
+        let path = self.entry_path(&key);
         if let Some(module) = self.load_cached(engine, &path) {
             return Ok((module, Source::Cached));
         }
@@ -222,8 +241,7 @@ impl ModuleCache {
         let _ = child;
         #[cfg(unix)]
         if let Some((command, timeout)) = child {
-            let result =
-                crate::compile_child::run(self, bytes, &Self::key(engine, bytes), command, timeout);
+            let result = crate::compile_child::run(self, bytes, &key, command, timeout);
             let why = match result {
                 Ok(()) => {
                     if let Some(module) = self.load_cached(engine, &path) {
@@ -260,6 +278,29 @@ impl ModuleCache {
             log::debug!("wasm module cache write {}: {why}", path.display());
         }
         Ok((module, Source::Compiled))
+    }
+
+    /// Loads `modules` as [`Self::load_or_compile`] does, up to [`PARALLEL_LOADS`] at once, and
+    /// keeps each one that loads for `load_or_compile` to hand back. Failures are not kept: one that
+    /// shared the machine may have failed where it alone would not, so `load_or_compile` tries it
+    /// again on its own and reports what it finds. The results are in `modules`' order, `None` where
+    /// a load panicked.
+    pub(crate) fn preload(
+        &self,
+        engine: &Engine,
+        modules: &[&[u8]],
+    ) -> Vec<Option<wasmtime::Result<Source>>> {
+        let threads = std::thread::available_parallelism()
+            .map_or(1, usize::from)
+            .min(PARALLEL_LOADS);
+        crate::parallel::map(modules, threads, |bytes| {
+            let (module, source) = self.load_or_compile(engine, bytes)?;
+            self.preloaded
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .insert(Self::key(engine, bytes), (module, source));
+            Ok(source)
+        })
     }
 
     pub(crate) fn entry_path(&self, key: &str) -> PathBuf {

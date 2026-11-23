@@ -14,6 +14,7 @@ pub mod fixture;
 pub mod link;
 mod load_times;
 mod module_cache;
+mod parallel;
 pub use compile_child::compile_child;
 #[cfg(test)]
 #[path = "../tests/support/no_hooks.rs"]
@@ -738,6 +739,49 @@ fn group_memory(manifests: &[(&str, &Manifest)], cap_mib: u32) -> Result<u32, Re
     }
 }
 
+/// Loads every module the groups would compile, several at once, so a first start compiles them
+/// side by side instead of one after the other. The groups still link in order, taking each module
+/// from `cache`, which compiles a failed one again on its own for the same refusal as before.
+fn preload(
+    engine: &wasmtime::Engine,
+    cache: &module_cache::ModuleCache,
+    std_member: &[u8],
+    packages: &[WasmPackage],
+    groups: &[Vec<usize>],
+    memory_cap_mib: u32,
+) {
+    // Mirrors what each group checks before it compiles its members, in order, so no module is
+    // compiled (and cached) that the groups would not have compiled themselves.
+    if horizon_guest_stack::check_current().is_err() {
+        return;
+    }
+    let _times = (
+        load_times::timer(load_times::Phase::Group),
+        load_times::timer(load_times::Phase::Modules),
+    );
+    let mut modules: Vec<&[u8]> = Vec::new();
+    for indices in groups {
+        let manifests: Vec<_> = indices
+            .iter()
+            .map(|&i| ("", &packages[i].manifest))
+            .collect();
+        if group_memory(&manifests, memory_cap_mib).is_err() {
+            continue;
+        }
+        let members = indices.iter().map(|&i| packages[i].module.as_slice());
+        for module in std::iter::once(std_member).chain(members) {
+            if modules.iter().any(|seen| std::ptr::eq(*seen, module)) {
+                continue;
+            }
+            if !link::would_compile(module) {
+                break;
+            }
+            modules.push(module);
+        }
+    }
+    cache.preload(engine, &modules);
+}
+
 fn load_with_cache(
     std_member: &[u8],
     packages: Vec<WasmPackage>,
@@ -761,6 +805,16 @@ fn load_with_cache(
             return loaded;
         }
     };
+    if let Some(cache) = cache {
+        preload(
+            &engine,
+            cache,
+            std_member,
+            &packages,
+            &groups,
+            memory_cap_mib,
+        );
+    }
     for indices in groups {
         let mut members = vec![link::Member {
             name: "libstd.so",

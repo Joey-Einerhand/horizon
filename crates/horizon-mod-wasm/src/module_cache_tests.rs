@@ -765,3 +765,45 @@ fn compiled_module_loads_cached_after_startup_cleanup() {
     assert!(!stale.exists());
     assert_cached(&next, &engine, &bytes);
 }
+
+#[test]
+fn preload_matches_serial_loads_in_order_and_retries_failures_alone() {
+    // Validation rejects a function that returns nothing for its i32 result.
+    let invalid = wat::parse_str("(module (func (result i32)))").unwrap();
+    let owned = [wasm(1), wasm(2), invalid, wasm(4), wasm(5)];
+    let modules: Vec<&[u8]> = owned.iter().map(Vec::as_slice).collect();
+    let (_serial_dir, serial, engine, _) = fixture();
+    let expected: Vec<_> = modules
+        .iter()
+        .map(|bytes| {
+            serial
+                .load_or_compile(&engine, bytes)
+                .map(|(_, source)| source)
+                .map_err(|why| format!("{why:#}"))
+        })
+        .collect();
+    assert_eq!(
+        expected.iter().map(Result::is_ok).collect::<Vec<_>>(),
+        [true, true, false, true, true]
+    );
+
+    let dir = tempfile::tempdir().unwrap();
+    let cache = ModuleCache::new(dir.path().join(".horizon-cache/wasm"));
+    let preloaded: Vec<_> = cache
+        .preload(&engine, &modules)
+        .into_iter()
+        .map(|result| result.unwrap().map_err(|why| format!("{why:#}")))
+        .collect();
+    assert_eq!(preloaded, expected);
+    assert_eq!(cache.compiles.load(Ordering::Relaxed), 5);
+
+    // Each kept module comes back without a compile; the failure compiles alone, failing the same.
+    for (index, (bytes, expected)) in modules.iter().zip(&expected).enumerate() {
+        let loaded = cache.load_or_compile(&engine, bytes);
+        match expected {
+            Ok(_) => assert_eq!(answer(&engine, &loaded.unwrap().0), index as i32 + 1),
+            Err(why) => assert_eq!(&format!("{:#}", loaded.err().unwrap()), why),
+        }
+    }
+    assert_eq!(cache.compiles.load(Ordering::Relaxed), 6);
+}

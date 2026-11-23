@@ -563,6 +563,32 @@ impl Layout {
         cache: Option<&crate::module_cache::ModuleCache>,
     ) -> Result<Self, LinkError> {
         let _timer = crate::load_times::timer(crate::load_times::Phase::Modules);
+        let (info, private_exports) = Self::parse(member)?;
+        let module = match cache {
+            Some(cache) => cache
+                .load_or_compile(engine, member.module)
+                .map(|(module, _)| module),
+            None => Module::new(engine, member.module),
+        }
+        .map_err(|error| LinkError::compile(member.name, error))?;
+        let got_funcs = module
+            .imports()
+            .filter(|import| import.module() == "GOT.func")
+            .count() as u64;
+        Ok(Self {
+            module,
+            info,
+            got_funcs,
+            private_exports,
+            memory_base: 0,
+            table_base: 0,
+        })
+    }
+
+    /// The checks [`Self::read`] makes before it compiles: `Ok` exactly when it would compile.
+    fn parse(
+        member: &Member<'_>,
+    ) -> Result<(wasmparser::MemInfo, std::collections::BTreeSet<String>), LinkError> {
         let malformed = |why: String| LinkError::Malformed {
             member: member.name.to_owned(),
             why,
@@ -622,24 +648,11 @@ impl Layout {
             });
         }
         let info = info.ok_or_else(|| malformed("dylink.0 has no memory info".into()))?;
-        let module = match cache {
-            Some(cache) => cache
-                .load_or_compile(engine, member.module)
-                .map(|(module, _)| module),
-            None => Module::new(engine, member.module),
-        }
-        .map_err(|error| LinkError::compile(member.name, error))?;
-        let got_funcs = module
-            .imports()
-            .filter(|import| import.module() == "GOT.func")
-            .count() as u64;
-        Ok(Self {
-            module,
-            info,
-            got_funcs,
-            private_exports: private_exports.unwrap_or_default(),
-            memory_base: 0,
-            table_base: 0,
-        })
+        Ok((info, private_exports.unwrap_or_default()))
     }
+}
+
+/// Whether linking would go on to compile `module` as a member, once the members before it have.
+pub(crate) fn would_compile(module: &[u8]) -> bool {
+    Layout::parse(&Member { name: "", module }).is_ok()
 }
