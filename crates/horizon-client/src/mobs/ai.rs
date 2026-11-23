@@ -6520,7 +6520,7 @@ mod burn_and_rose_tests {
         let build = build_with("minecraft:lava_cauldron");
         let mut test_level = crate::health::TestLevel::new(0);
         let level = &mut test_level.level();
-        crate::mobs::world::with_built_test_world(&[], build, |w, types| {
+        let ran = crate::mobs::world::with_built_test_world(&[], build, |w, types| {
             let mut m = golem(types);
             let mut events = Vec::new();
             let start = m.health;
@@ -6528,6 +6528,7 @@ mod burn_and_rose_tests {
             assert_eq!(m.health, start - 4.0, "one lava hit");
             assert_eq!(m.fire_ticks, 300, "ignited to the full time");
         });
+        assert!(ran, "the vanilla test resources must be available");
     }
 }
 
