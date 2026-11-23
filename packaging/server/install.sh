@@ -64,14 +64,35 @@ else
   else die "sha256sum or shasum is needed"; fi
 
   api() { curl -fsSL -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$REPO/releases/$1"; }
+  # The body of a release in API_BODY and the HTTP status in API_CODE (000: no answer), for the choice below, which
+  # falls back only on a 404 as `horizon-server update` does, never on a GitHub outage.
+  api_status() {
+    API_BODY=$(curl -sSL -H "Accept: application/vnd.github+json" -w '\n%{http_code}' "https://api.github.com/repos/$REPO/releases/$1") || API_BODY='
+000'
+    API_CODE=${API_BODY##*
+}
+    API_BODY=${API_BODY%
+*}
+  }
   if [ "$VERSION" = latest ]; then
     # The newer of GitHub's latest release and the `nightly` pre-release: a numbered release of a line after 0.2
     # (v0.3.0 on) is newer than every Nightly, the 0.2 line and older are not (as `horizon-server update` ranks them).
-    JSON=$(api latest) || JSON=
+    api_status latest
+    case "$API_CODE" in
+      200) JSON=$API_BODY ;;
+      404) JSON= ;;
+      *) die "GitHub answered $API_CODE for the latest release" ;;
+    esac
     LATEST_TAG=$(printf '%s\n' "$JSON" | sed -n 's/^  "tag_name": "\([^"]*\)".*/\1/p' | head -n 1)
     case "$LATEST_TAG" in
       v0.[3-9].*|v0.[1-9][0-9]*.*|v[1-9].*|v[1-9][0-9].*|v[1-9][0-9][0-9].*) ;;
-      *) NIGHTLY_JSON=$(api tags/nightly) && JSON=$NIGHTLY_JSON; [ -n "$JSON" ] || die "no release on GitHub" ;;
+      *)
+        api_status tags/nightly
+        case "$API_CODE" in
+          200) JSON=$API_BODY ;;
+          404) [ -n "$JSON" ] || die "no release on GitHub" ;;
+          *) die "GitHub answered $API_CODE for the nightly release" ;;
+        esac ;;
     esac
   else
     JSON=$(api "tags/$VERSION") || die "no release $VERSION on GitHub"

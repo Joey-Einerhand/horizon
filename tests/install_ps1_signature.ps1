@@ -47,7 +47,16 @@ public static class FakeEnvironment {
 "@
 
 # The fakes: the API answers with the case's release, any download with the case's file of that name.
-function Invoke-RestMethod { param($Uri, $Headers) $global:HorizonTestRel.Release }
+function Invoke-RestMethod {
+    param($Uri, $Headers)
+    $Status = $global:HorizonTestRel.LatestStatus
+    if ($Status -and $Uri.EndsWith("/releases/latest")) {
+        $Failure = [System.Exception]::new("HTTP $Status")
+        $Failure | Add-Member -NotePropertyName Response -NotePropertyValue ([pscustomobject]@{ StatusCode = $Status })
+        throw $Failure
+    }
+    $global:HorizonTestRel.Release
+}
 function Invoke-WebRequest {
     param($Uri, $OutFile, [switch]$UseBasicParsing)
     $Source = Join-Path $global:HorizonTestRel.Files ($Uri -split "/")[-1]
@@ -113,8 +122,8 @@ function Set-Installer([string]$Dir, [string]$Key) {
 }
 
 # Runs the case's install.ps1 with PATH set to Path; returns @{ Ok; Out }.
-function Invoke-Case([string]$Dir, [string]$Path, [string[]]$Arguments = @()) {
-    $global:HorizonTestRel = [pscustomobject]@{ Release = $script:Releases[$Dir]; Files = Join-Path $Dir "files" }
+function Invoke-Case([string]$Dir, [string]$Path, [string[]]$Arguments = @(), $LatestStatus = $null) {
+    $global:HorizonTestRel = [pscustomobject]@{ Release = $script:Releases[$Dir]; Files = Join-Path $Dir "files"; LatestStatus = $LatestStatus }
     $env:PATH = $Path
     $Ok = $true
     $Out = try {
@@ -162,6 +171,15 @@ try {
     # 1d. A Nightly whose title doesn't name its date and commit: refused, not dated some other way.
     $d = Join-Path $W "title"; New-Release $d "nightly" $Nightly; Set-Release $d "nightly" $true "Nightly"
     $r = Invoke-Case $d $P; Test-Case "Nightly with an unreadable title refused" $false "title doesn't name its date and commit" $r
+
+    # 1e. The latest request fails with a server error while the Nightly is there: stop, never install the older Nightly.
+    $d = Join-Path $W "outage"; New-Release $d "nightly" $Nightly
+    $r = Invoke-Case $d $P @() 503; Test-Case "a failed latest request never falls back to the Nightly" $false "HTTP 503" $r
+    Test-That "the Nightly was installed during an outage" (-not (Test-Path (Join-Path $d "inst\current")))
+
+    # 1f. No latest release (404): the Nightly installs.
+    $d = Join-Path $W "nolatest"; New-Release $d "nightly" $Nightly
+    $r = Invoke-Case $d $P @() 404; Test-Case "a missing latest release falls back to the Nightly" $true "Release signature OK" $r
 
     # 2. Good signature, a normal tag.
     $d = Join-Path $W "tag"; New-Release $d "v1.2.3"

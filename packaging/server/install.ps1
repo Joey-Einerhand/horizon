@@ -33,13 +33,22 @@ switch ($Architecture) {
 function Get-Release([string]$Path) {
     Invoke-RestMethod -Uri "https://api.github.com/repos/$Repo/releases/$Path" -Headers @{ Accept = "application/vnd.github+json" }
 }
+# The release at Path, or $null when GitHub says it does not exist (404).
+function Get-ReleaseOrNull([string]$Path) {
+    try { Get-Release $Path } catch {
+        $Response = $_.Exception.Response
+        if ($Response -and [int]$Response.StatusCode -eq 404) { return $null }
+        throw
+    }
+}
 if ($Version -eq "latest") {
     # The newer of GitHub's latest release and the nightly pre-release: a numbered release of a line after 0.2
     # (v0.3.0 on) is newer than every Nightly, the 0.2 line and older are not.
-    $Release = $null
-    try { $Release = Get-Release "latest" } catch { }
+    # Only a 404 falls back, as `horizon-server update` does; any other failure stops the install.
+    $Release = Get-ReleaseOrNull "latest"
     if (-not $Release -or $Release.tag_name -notmatch '^v(0\.([3-9]|[1-9][0-9]+)|[1-9][0-9]{0,2})\.') {
-        try { $Release = Get-Release "tags/nightly" } catch { if (-not $Release) { throw } }
+        $Nightly = Get-ReleaseOrNull "tags/nightly"
+        if ($Nightly) { $Release = $Nightly } elseif (-not $Release) { throw "no release on GitHub" }
     }
 } else {
     $Release = Get-Release "tags/$Version"

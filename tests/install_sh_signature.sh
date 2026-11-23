@@ -57,13 +57,24 @@ done
 mkdir "$W/fake"
 cat > "$W/fake/curl" <<'CURL'
 #!/bin/sh
-out=; url=
-while [ $# -gt 0 ]; do case "$1" in -o) out=$2; shift 2 ;; -*) shift ;; *) url=$1; shift ;; esac; done
+# The API answers with release.json; the case may give the latest release its own latest.json and
+# latest.code (an HTTP status, with no body when it is an error). With -w, the status is printed after the body.
+out=; url=; w=
+while [ $# -gt 0 ]; do case "$1" in -o) out=$2; shift 2 ;; -w) w=$2; shift 2 ;; -*) shift ;; *) url=$1; shift ;; esac; done
+code=200
 case "$url" in
+  https://api.github.com/*/releases/latest)
+    [ -f "$REL/latest.code" ] && code=$(cat "$REL/latest.code")
+    if [ -f "$REL/latest.json" ]; then src=$REL/latest.json; else src=$REL/release.json; fi ;;
   https://api.github.com/*) src=$REL/release.json ;;
   *) src=$REL/files/$(basename "$url") ;;
 esac
-[ -f "$src" ] || exit 22
+[ -f "$src" ] || code=404
+if [ -n "$w" ]; then
+  [ "$code" -lt 400 ] && cat "$src"
+  printf '\n%s' "$code"; exit 0
+fi
+[ "$code" -lt 400 ] || exit 22
 if [ -n "$out" ]; then cp "$src" "$out"; else cat "$src"; fi
 CURL
 chmod +x "$W/fake/curl"
@@ -116,6 +127,15 @@ run "$d" "$P"; verdict "older Nightly passed off as a newer one refused" 1 "sign
 # 1d. A Nightly whose title doesn't name its date and commit: refused, not dated some other way.
 d=$W/title; make_release "$d" nightly "$NIGHTLY"; with_key "$d"; json "$d" nightly yes "Nightly"
 run "$d" "$P"; verdict "Nightly with an unreadable title refused" 1 "title doesn't name its date and commit" "$d"
+
+# 1e. The latest request fails with a server error while the Nightly is there: stop, never install the older Nightly.
+d=$W/outage; make_release "$d" nightly "$NIGHTLY"; with_key "$d"; echo 503 > "$d/latest.code"
+run "$d" "$P"; verdict "a failed latest request never falls back to the Nightly" 1 "GitHub answered 503" "$d"
+[ ! -e "$d/inst/current" ] || { echo "FAIL the Nightly was installed during an outage"; fails=$((fails+1)); }
+
+# 1f. No latest release (404): the Nightly installs.
+d=$W/nolatest; make_release "$d" nightly "$NIGHTLY"; with_key "$d"; echo 404 > "$d/latest.code"
+run "$d" "$P"; verdict "a missing latest release falls back to the Nightly" 0 "Release signature OK" "$d"
 
 # 2. Good signature, a normal tag.
 d=$W/tag; make_release "$d" v1.2.3; with_key "$d"
