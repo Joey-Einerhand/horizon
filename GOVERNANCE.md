@@ -56,10 +56,11 @@ the Horizon Team, for example.
 | **Contributor** (⛏️ Iron, 🥇 Gold, 💎 Diamond, 🟪 Netherite ranks) | Write in #contributors; `/claim` issues; vote in their group's elections (if active in that group) | One merged pull request in a public horizon-rust repo, linked with `/link-github` and `/verify-github`. Ranks come from merged pull requests: 10, 40, 100 and 200 | Contributor status and ranks stay | No |
 | **Group member** | Read and write in the group's channel; get the group's pings; vote in the group's elections and votes when active | Pick the group's role in Channels & Roles, or with `/groups` | Remove the role | No |
 | **🤝 Support** | Answer and close posts in #horizon-support | Given by any moderator (a free action, section 2.1) | Resign, 30 days inactive, or removed by a moderator, the Chief of Mods or the council | No |
-| **🛡️ Moderator** | Time out, delete messages, manage threads, quarantine. No bans | Elected by the mods (section 5.3); council veto within 24 h | Resign, 30 days inactive, suspended by the Chief of Mods, recalled by the mods, removed by a council poll (simple majority) | **Yes** |
-| **🛡️ Chief of Mods** | A moderator's powers, plus bans; leads the mods; suspends a mod at once pending the council | Elected by the mods, from the mods with at least 30 days (section 5.3); council veto within 24 h | Resign, 30 days inactive, recalled by the mods, council poll (simple majority) | **Yes** |
+| **🛡️ Mod** | Time out, delete messages, manage threads, read the audit log, quarantine. No kicks, no bans | Elected by the mods (section 5.3); council veto within 24 h. A new moderator whose rank isn't settled starts here | Resign, 30 days inactive, suspended by the Chief of Mods, recalled by the mods, removed by a council poll (simple majority) | **Yes** |
+| **🛡️ Senior Mod** | A Mod's powers, plus kicks, bans, Manage Channels and Manage Roles | Elected by the mods, from the mods with at least 30 days (section 5.3); council veto within 24 h | Resign, 30 days inactive, suspended by the Chief of Mods, recalled by the mods, removed by a council poll (simple majority) | **Yes** |
+| **🛡️ Chief of Mods** | A Senior Mod's powers; leads the mods; suspends a mod at once pending the council | Elected by the mods, from the mods with at least 30 days (section 5.3); council veto within 24 h | Resign, 30 days inactive, recalled by the mods, council poll (simple majority) | **Yes** |
 | **🧭 Group lead** | Decides inside the group's topic (section 6); manages the group's channel; triage on the group's GitHub issues | Elected by the group's active members and the Team (section 5.3); council veto within 24 h; 30 days probation | Resign, 30 days inactive (automatic), recalled by the same electorate, council poll (simple majority); confirmed again every 6 months | **Yes** |
-| **🌌 Horizon Team** | Review and merge pull requests (GitHub `horizon-team`, write access); `/nightly` and triage commands (trusted reviewers); #horizon-team | Elected by the Team, 2/3 (section 5.3); council veto within 24 h; 30 days probation | Resign, 60 days without a merge or review (automatic), recalled by the Team (2/3), council poll (2/3, without the person) | **Yes** |
+| **🌌 Horizon Team** | Review and merge pull requests (GitHub `horizon-team`, write access); `/nightly` and triage commands (trusted reviewers); #horizon-team; on Discord the role carries kick, ban and mention @everyone | Elected by the Team, 2/3 (section 5.3); council veto within 24 h; 30 days probation | Resign, 60 days without a merge or review (automatic), recalled by the Team (2/3), council poll (2/3, without the person) | **Yes** |
 | **🏛️ Council** | Decides everything else by poll (section 4); bans; emergency actions by any 2 members | Nominated by a council member, the filter, a 24 h public discussion, then a council poll (2/3); 30 days probation | Resign, inactivity (section 5.5), council poll (2/3, without the person) | **Yes** |
 
 **The account holder** isn't a level. The founder (Ludovic) still holds the project's accounts (GitHub organisation
@@ -81,8 +82,8 @@ Free actions, for example:
 
 - a lead gives or removes their group's helper role (🧩 Horizon Modding Team), through Kira;
 - a moderator gives or removes 🤝 Support, through Kira;
-- a moderator times out, deletes, quarantines, or changes a channel's slowmode or topic; the Chief of Mods bans and
-  unbans;
+- a moderator times out, deletes, quarantines, or changes a channel's slowmode or topic; a Senior Mod or the Chief of
+  Mods kicks, bans and unbans;
 - the Team merges and labels;
 - a server operator restarts the official server, or prunes backups and chunks by the written rule;
 - a lead pins, renames or creates threads in their group's channels;
@@ -102,13 +103,14 @@ council matter.
 | **Member** | — | Chat, threads, picks group roles | Play | Issues, pull requests, `/claim` |
 | **Group helper** (🧩 Horizon Modding Team) | — | Writes in the group's team channel | — | — |
 | **🤝 Support** | Closes support posts | Manages threads in #horizon-support | — | — |
-| **🛡️ Moderator** | Moderation matters, by the mods' vote (section 7) | Time out, delete messages, manage threads and nicknames, audit log, voice mute and move; quarantine through Kira; the staff channels | In-game op if also elected operator | — |
-| **🛡️ Chief of Mods** | A moderator's, plus bans and unbans; suspends a mod at once; breaks ties in the mods' votes | Plus Ban | As a moderator | — |
+| **🛡️ Mod** | Moderation matters, by the mods' vote (section 7) | Time out, delete messages, manage threads and nicknames, audit log, voice mute and move; quarantine through Kira; the staff channels. No Kick, no Ban | In-game op if also elected operator | — |
+| **🛡️ Senior Mod** | A Mod's, plus kicks, bans and unbans | Plus Kick, Ban, Manage Channels and Manage Roles | As a moderator | — |
+| **🛡️ Chief of Mods** | A Senior Mod's; suspends a mod at once; breaks ties in the mods' votes | As a Senior Mod | As a moderator | — |
 | **Server operator** | In-game moderation by the server rules | — | Op (the server's ops list); no panel, no `server.toml` | — |
 | **🧭 Server & SMP lead** | The server's settings, by the written rules (backup first, warning in game) | As every lead | A panel sub-user once a council accounts poll gives one | As every lead |
 | **🧭 Group lead** | The group's free actions; gives and removes its helper role | In the group's channels: delete messages, manage and pin threads, ping the group; the helper role through Kira | — | Triage on the group's labels through Kira (no repository role) |
-| **🌌 Horizon Team** | Merges; elects Team members | #horizon-team and the staff channels. The role still carries timeout and delete; whether it keeps them is a mod matter | — | `horizon-team`: write on horizon, horizon-mods, horizon-mixins, horizon-native-mod-template and horizon-server; also kira and horizon-site if P37 passes |
-| **🔧 Server Manager** | — | Manage Channels and Manage Roles (the server's layout); given by council poll | — | — |
+| **🌌 Horizon Team** | Merges; elects Team members | #horizon-team and the staff channels. The role carries Kick, Ban and Mention @everyone, and still timeout and delete; whether it keeps them is a mod matter | — | `horizon-team`: write on horizon, horizon-mods, horizon-mixins, horizon-native-mod-template and horizon-server; also kira and horizon-site if P37 passes |
+| **🔧 Server Manager** | — | Manage Channels and Manage Roles (the server's layout); given by council poll. 🛡️ Senior Mod and 🛡️ Chief of Mods hold them too | — | — |
 | **🏛️ Council** | Council polls, vetoes, emergencies (any 2) | A moderator's permissions plus Ban, mention @everyone and pin; #council | Panel sub-users for two members if P38 passes | The `council` team: code-owner reviews and the release tools' owner powers if P35 passes, security managers if P36 passes; a second organisation owner if P28 passes |
 | **Account holder** (the founder) | Carries out decisions on his accounts (section 11) | Server owner | The panel's owner account | Organisation owner |
 
@@ -146,12 +148,18 @@ The role carries no permission, so it has no age rule. A moderator gives it, and
 
 ### 🛡️ Moderators and the Chief of Mods
 
+- **Ranks:** 🛡️ Mod, 🛡️ Senior Mod and 🛡️ Chief of Mods, from the lowest. "Moderator" in this document means any of
+  them. A new moderator whose rank isn't settled starts as 🛡️ Mod and is raised by the mods' election when needed
+  (section 5.3).
 - **Discord:** time out members, delete messages, manage threads and nicknames, read the audit log, quarantine
-  through Kira, and see the staff channels. **Moderators don't ban.** Bans are done by council members and the Chief of
-  Mods. Kira's automatic actions (the honeypot, clear scams, illegal images) stay as they are.
+  through Kira, and see the staff channels. **🛡️ Mods don't kick or ban.** Kicks and bans are done by Senior Mods, the
+  Chief of Mods and council members; the 🌌 Horizon Team role carries them too. Senior Mods and the Chief of Mods
+  also hold Manage Channels and Manage Roles. Kira's automatic actions (the honeypot, clear scams, illegal images)
+  stay as they are.
 - **Official server:** server operators (ops) are moderators in game. They need the 18+ rule and are confirmed the
   same way (section 6, Server and SMP).
-- **Alone:** a timeout, a deleted message, a quarantine, with a reason in the mod case.
+- **Alone:** a timeout, a deleted message, a quarantine, with a reason in the mod case; for a Senior Mod also a kick or
+  a ban.
 - **The Chief of Mods** is the first contact for moderation questions. They organise the mods, can ban, and can take a
   moderator's role away at once when there is a problem. The council confirms or reverses that within 72 hours.
 
@@ -173,8 +181,8 @@ diff, never merge your own pull request, and use `needs-proof` for anything risk
 - **GitHub:** member of the `horizon-team` team (write access to the Horizon repos), on the trusted reviewers list
   (`/nightly` and triage commands).
 - **Discord:** the 🌌 Horizon Team role, #horizon-team, and writing in #contributors and the read-only channels.
-  Moderation permissions belong to the moderators and the council: a Team member moderates only if they also hold
-  one of those roles.
+  The role also carries kick, ban and mention @everyone. Other moderation belongs to the moderators and the council:
+  a Team member times out or quarantines only if they also hold one of those roles.
 - **During the 30-day probation:** they merge only ordinary pull requests. They don't merge `needs-proof` pull
   requests, don't approve files that CODEOWNERS guards, and don't use `/nightly`.
 
@@ -299,6 +307,7 @@ A nomination is refused below these floors.
 | --- | --- |
 | **Group lead** | Verified GitHub; tenure of 30 days or more; **in the group's area: 8 or more merged pull requests, or 20 or more reviews** (Translations: 5 or more merged translation pull requests; Server and SMP: 8 pull requests, or 30 days as an official server operator with activity); 15 or more active days in the last 60; clean record; 18+ |
 | **Moderator** | In the server for 30 days or more; Kira level 10 or more; 15 or more active days in the last 60; clean record; 18+ |
+| **Senior Mod** | Moderator for 30 days or more, past probation; 18+ |
 | **Chief of Mods** | Moderator for 30 days or more, past probation; 18+ |
 | **Horizon Team** | 🥇 Gold rank (40 merged pull requests); 20 or more reviews of others' pull requests; tenure of 30 days or more; 20 or more active days in the last 60; clean record; verified GitHub; 18+ |
 | **Council** | Horizon Team member, group lead or Chief of Mods for 60 days or more, past probation; 20 or more active days in the last 60; clean record; 18+ |
@@ -313,7 +322,8 @@ for a recall.
 
 | Post | Who votes | Passes with | Who can start it |
 | --- | --- | --- | --- |
-| **🛡️ Moderator** | The mods (🛡️ Mod and 🛡️ Chief of Mods) | Simple majority; the Chief of Mods breaks a tie | Any mod, a council member |
+| **🛡️ Mod** | The mods (🛡️ Mod, 🛡️ Senior Mod and 🛡️ Chief of Mods) | Simple majority; the Chief of Mods breaks a tie | Any mod, a council member |
+| **🛡️ Senior Mod** | The mods | Simple majority; the Chief of Mods breaks a tie | Any mod, a council member |
 | **🛡️ Chief of Mods** | The mods; candidates are mods for 30 days or more | Simple majority | Any mod, a council member |
 | **Server operator** | The mods and the 🧭 Server lead | Simple majority | The Server lead, the Chief of Mods, a council member |
 | **🧭 Group lead** (a co-lead once the group has 8 active members) | The group's active members, and the Team | Simple majority | The current lead, a Team member, a council member |
@@ -379,7 +389,7 @@ holder or an org owner removes GitHub access when the Team role ends.
 | --- | --- | --- | --- |
 | Group lead | A counted action in the group's area, or messages in the group's channel | Day 21 | Day 30 |
 | Horizon Team | A merge or a review | Day 45 | Day 60 |
-| Moderator, Chief of Mods | A moderation action, or messages in the staff channels | Day 21 | Day 30 |
+| Mod, Senior Mod, Chief of Mods | A moderation action, or messages in the staff channels | Day 21 | Day 30 |
 | Support | An answer in #horizon-support | Day 21 | Day 30 |
 | Council | A vote in a poll. At 30 days with no vote, while at least 2 polls were held | Day 23 | Day 30, or 45 days with no counted activity at all |
 
@@ -460,15 +470,16 @@ nobody is appointed just to fill the seat.
 - **The server rules** are in #rules. Moderators enforce them, the Chief of Mods leads the mods, and the council can
   change the rules (2/3).
 - **Every action has a mod case**: who acted, what they did, and why. Kira keeps the cases.
-- **First appeal:** within 14 days, through #appeal (for a quarantine) or mod mail. A moderator who wasn't involved,
-  or the Chief of Mods, answers within 72 hours.
+- **First appeal:** within 14 days, through #appeal (for a quarantine) or mod mail, answered within 72 hours. Any
+  moderator who wasn't involved handles a routine appeal, such as lifting a timeout after review. A ban appeal, or an
+  appeal of a moderator's own action, goes to a Senior Mod who wasn't involved or to the Chief of Mods.
 - **Second appeal:** for bans, timeouts over 24 hours and quarantines, a mods' vote in #mod-chat. Mods who were
   involved don't vote, and the council's veto applies. The answer is final for 90 days.
 - **Not appealable here:** actions that Discord's rules or the law require. Those are reported where the law says.
 - **Removing a moderator:** the Chief of Mods can suspend a moderator at once, and the mods decide within 72 hours by
   a recall vote. The mods recall the Chief of Mods the same way. The council can also remove either by poll.
-- **Council members keep the ban permission** for emergencies and when no moderator is around. They log the ban like
-  any other, and the mods can reverse it by vote.
+- **Council members keep the ban permission** for emergencies and when no moderator who can ban is around. They log the
+  ban like any other, and the mods can reverse it by vote.
 - **Staff are moderated like everyone.** When a council member is involved, the council decides without them.
 
 ## 8. Conflicts and hard cases
