@@ -360,6 +360,19 @@ pub fn reads_tick_reports(line: &str) -> bool {
     )
 }
 
+/// Whether `line` is a command that only changes the level's own state, the global tick's (game/runtime/
+/// global_tick.rs): `/time`, `/weather` and `/gamerule`. The region of the player who typed it runs it and sends the
+/// change to the global tick, so it takes effect in every region at its next tick without bringing a region home.
+pub fn changes_level_state(line: &str) -> bool {
+    matches!(
+        line.trim()
+            .trim_start_matches('/')
+            .split_whitespace()
+            .next(),
+        Some("time" | "weather" | "gamerule")
+    )
+}
+
 /// Whether a player's packet stays inside the player's region, so its region thread handles it. What reaches
 /// other players or the whole server (chat, commands, respawning, settings, mod messages) is the server's.
 pub(crate) fn region_local(p: &S) -> bool {
@@ -3281,7 +3294,10 @@ impl Hub {
     pub fn away_local(&self, p: &S) -> bool {
         region_local(p)
             || match p {
-                S::ChatCommand(c) => self.chat_in_region() && reads_tick_reports(&c.command),
+                S::ChatCommand(c) => {
+                    self.chat_in_region()
+                        && (reads_tick_reports(&c.command) || changes_level_state(&c.command))
+                }
                 S::ChatAck(_) => self.chat_in_region(),
                 S::Chat(c) => self.chat_in_region() && self.chat_filter_passes(&c.message),
                 _ => false,

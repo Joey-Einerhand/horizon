@@ -1103,6 +1103,16 @@ impl SpawnState {
     fn uncounted(spawnable_chunks: i32, players: Vec<SpawnPlayer>) -> Self {
         Self::uncounted_in(spawnable_chunks, players, SpawnBuffers::default())
     }
+    /// The state counting what other parts of the level hold too: their spawnable chunks and mobs per category
+    /// (by [`Category::ALL`]). With regions each counts its own chunks, and vanilla's caps (`limit * chunks /
+    /// 289` against the count) are the level's: the global tick sums the regions' counts.
+    pub fn with_others(mut self, chunks: i32, counts: [i32; 8]) -> Self {
+        self.spawnable_chunks += chunks;
+        for (own, other) in self.counts.iter_mut().zip(counts) {
+            *own += other;
+        }
+        self
+    }
     /// The state with the level's own spawn limits in place of vanilla's.
     pub fn with_limits(mut self, limits: SpawnLimits) -> Self {
         self.limits = limits;

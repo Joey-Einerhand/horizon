@@ -324,12 +324,26 @@ impl Game<'_> {
         {
             return;
         }
+        // A region's game never counts the phantom spawner: its countdown is the level's, and the region is
+        // granted a pass over its players (game/runtime/global_tick.rs).
+        if self.region_id().is_some() {
+            return;
+        }
         if !self.stats.phantom_due() {
             return;
         }
         let r = &mut self.world.random;
         self.stats
             .phantom_delay((60 + r.next_int_bound(60).unwrap_or(0)) * 20);
+        if self.global_mode() {
+            self.grant_phantom_passes();
+        } else {
+            self.spawn_phantom_pass();
+        }
+    }
+    /// What `PhantomSpawner.tick` does once its countdown ran out: each player of this game who is tired under an
+    /// open night sky.
+    pub(super) fn spawn_phantom_pass(&mut self) {
         if self.sky_darken() < 5 {
             return;
         }

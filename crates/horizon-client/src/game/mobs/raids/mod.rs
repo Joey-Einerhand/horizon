@@ -1361,6 +1361,14 @@ impl Game<'_> {
     /// the pillagers it accepts are created after the pass, finalized for a
     /// patrol.
     pub(super) fn tick_patrol_spawner(&mut self) {
+        self.patrol_pass(PatrolPass::Tick);
+    }
+    /// A patrol attempt a region was granted: everything `PatrolSpawner.tick` does after its countdown, for the
+    /// players this game holds.
+    pub(super) fn patrol_attempt(&mut self) {
+        self.patrol_pass(PatrolPass::Attempt);
+    }
+    fn patrol_pass(&mut self, pass: PatrolPass) {
         if self.dim != Dim::Overworld {
             return;
         }
@@ -1398,6 +1406,7 @@ impl Game<'_> {
             LevelRandom::for_level(LegacyRandom::new(0)),
         );
         let mut members: Vec<Member> = Vec::new();
+        let mut due = false;
         let mut spawner = std::mem::take(&mut self.raiding.patrol);
         {
             let level = PatrolCx {
@@ -1413,10 +1422,27 @@ impl Game<'_> {
                 members.push(m);
                 true
             };
-            spawner.tick(&level, enemies, &mut random, &mut spawn);
+            match pass {
+                PatrolPass::Tick if self.global_mode() => {
+                    // The countdown is the level's, counted here once; a region makes the attempt.
+                    if spawner.due(
+                        enemies,
+                        level.spawn_patrols(),
+                        || level.bright_outside(),
+                        &mut random,
+                    ) {
+                        due = true;
+                    }
+                }
+                PatrolPass::Tick => spawner.tick(&level, enemies, &mut random, &mut spawn),
+                PatrolPass::Attempt => spawner.attempt(&level, &mut random, &mut spawn),
+            }
         }
         self.raiding.patrol = spawner;
         self.world.random = random;
+        if due {
+            let _ = self.grant_spawn(super::global_tick::SpawnerKind::Patrol);
+        }
         for m in members {
             let at = [
                 f64::from(m.pos[0]),
@@ -1429,7 +1455,35 @@ impl Game<'_> {
     /// `VillageSiege.tick`: at midnight one night in ten, 20 zombies spawn
     /// two ticks apart near a village 32 blocks from a player standing in it.
     pub(super) fn tick_village_siege(&mut self) {
-        horizon_gameplay::village_siege::tick(self);
+        let dim = self.dim;
+        if self.global_mode() {
+            // The level's night is decided here, once; the first region with a player in a village runs it.
+            let tonight = horizon_gameplay::village_siege::night(self);
+            let global = std::sync::Arc::clone(&self.regions.global);
+            global.set_night(dim, tonight);
+            if tonight {
+                self.run_siege_night(super::region_tasks::SERVER);
+            }
+        } else if let Some(region) = self.region_id() {
+            let night = self.regions.global.night(dim);
+            self.raiding.siege.set_tonight(night.open_to(region));
+            if night.open_to(region) {
+                self.run_siege_night(region);
+            }
+        } else {
+            horizon_gameplay::village_siege::tick(self);
+        }
+    }
+    /// Tonight's siege, run by `region` once it has claimed the night: its spot is chosen by a player of its
+    /// own standing in a village.
+    fn run_siege_night(&mut self, region: u64) {
+        let dim = self.dim;
+        let global = std::sync::Arc::clone(&self.regions.global);
+        let mut claim = || global.claim_night(dim, region);
+        horizon_gameplay::village_siege::run_claiming(self, &mut claim);
+        if self.raiding.siege.is_over() {
+            global.finish_night(dim);
+        }
     }
     /// `ServerLevel.isVillage`: within one section of a village.
     fn is_village(centers: &HashSet<(i32, i32, i32)>, pos: [i32; 3]) -> bool {
@@ -1488,6 +1542,15 @@ impl Game<'_> {
             }
         }
     }
+}
+
+/// Which part of `PatrolSpawner.tick` a pass runs.
+#[derive(Clone, Copy)]
+enum PatrolPass {
+    /// The whole function, or its countdown alone while regions are out.
+    Tick,
+    /// What follows the countdown: a region's granted attempt.
+    Attempt,
 }
 
 impl SiegeLevel for Game<'_> {

@@ -290,7 +290,8 @@ impl Regions {
     /// Every chunk position in the sections region `k` owns: all the chunks it can hold, loaded or not.
     pub(super) fn chunk_keys(&self, k: usize) -> Vec<(i32, i32)> {
         let side = 1 << SECTION_SHIFT;
-        let mut keys = Vec::with_capacity(self.by_region.get(k).map_or(0, Vec::len) << (2 * SECTION_SHIFT));
+        let mut keys =
+            Vec::with_capacity(self.by_region.get(k).map_or(0, Vec::len) << (2 * SECTION_SHIFT));
         for &(sx, sz) in self.by_region.get(k).into_iter().flatten() {
             for dx in 0..side {
                 for dz in 0..side {
@@ -370,6 +371,22 @@ pub(super) struct RegionState {
     pub(super) conns_dirty: bool,
     /// The tick a command run again first ran in, while it is.
     pub(super) deferred_since: Option<u64>,
+    /// The global tick every game of the server shares: the snapshots a region reads, the messages it sends
+    /// (game/runtime/global_tick.rs).
+    pub(super) global: Arc<super::global_tick::GlobalTick>,
+    /// What only the global tick keeps: the censuses it was sent and the changes it applied. The server's own
+    /// game holds it.
+    pub(super) gstate: super::global_tick::GlobalState,
+    /// This region's changes to the level that the snapshot does not hold yet, by their message number.
+    pub(super) unacked: Vec<(u64, super::global_tick::Change)>,
+    /// Messages this region sent that change the level.
+    pub(super) change_seq: u64,
+    /// The server tick of the snapshot this region read last, and the level data it took from it.
+    pub(super) global_seen: Option<u64>,
+    pub(super) level_seen: Option<Arc<horizon_client::save::Level>>,
+    /// What vanilla's mob caps counted in this game's own chunks in its last spawning pass: spawnable chunks and
+    /// mobs per category, sent to the global tick as a census.
+    pub(super) last_caps: Option<(i32, [i32; 8])>,
 }
 
 /// Region games made and not in use.
@@ -398,6 +415,9 @@ impl Spares {
         game.regions.link = None;
         game.regions.area.clear();
         game.regions.topology_seen = None;
+        game.regions.global_seen = None;
+        game.regions.level_seen = None;
+        game.regions.unacked.clear();
         self.lock().push(game);
     }
     fn len(&self) -> usize {
@@ -570,7 +590,10 @@ impl Slot {
     }
     /// Takes the game in if its thread finished (waiting until `until`, or for good when None); false while it
     /// still runs.
-    pub(super) fn home(&mut self, until: Option<std::time::Instant>) -> std::result::Result<bool, String> {
+    pub(super) fn home(
+        &mut self,
+        until: Option<std::time::Instant>,
+    ) -> std::result::Result<bool, String> {
         let Some(rx) = self.running.as_ref() else {
             return Ok(true);
         };
@@ -786,8 +809,9 @@ impl Game<'_> {
         self.world_biomes = from.world_biomes.clone();
         self.end.set_locator(from.end.locator());
         self.dim = from.dim;
-        // The task queues are the server's, one set for all its games.
+        // The task queues are the server's, one set for all its games, and so is the global tick.
         self.regions.tasks = Arc::clone(&from.regions.tasks);
+        self.regions.global = Arc::clone(&from.regions.global);
         self.world_flat = from.world_flat;
         self.world_debug = from.world_debug;
         // The server's tables, shared: building them reads every item and recipe file from disk.
@@ -1092,6 +1116,11 @@ impl Game<'_> {
         if self.regions.worker {
             return Ok(());
         }
+        // The global tick: what the regions sent since, applied to the level before it ticks.
+        if region_threads_on() {
+            self.record_home_census();
+            self.tick_global();
+        }
         // The server's own ids come from the shared pool whenever its block runs low, whichever level ticks and
         // split or not: a level that is never split (the End) spawning past its block would hand out the ids
         // the region games of other levels are about to take.
@@ -1282,7 +1311,10 @@ impl Game<'_> {
         }
         set.lent = Arc::new(lent);
         for slot in &mut set.games {
-            slot.owed = slot.game.as_deref().is_some_and(|w| terrain_owed(w, &set.lent));
+            slot.owed = slot
+                .game
+                .as_deref()
+                .is_some_and(|w| terrain_owed(w, &set.lent));
             slot.terrain_wait = TERRAIN_GAP;
         }
         self.lan = Some(host);
@@ -1364,6 +1396,8 @@ impl Game<'_> {
         }
         self.stock_spares();
         self.streaming.lent = Some(Arc::clone(&set.lent));
+        // The level as its regions read it at the start of their ticks.
+        self.publish_global();
         self.deliver_away_out_home();
         let pool = Arc::clone(
             self.regions
@@ -1414,16 +1448,13 @@ impl Game<'_> {
                 continue;
             };
             let copying = std::time::Instant::now();
+            // The clock, the weather, the rules and the border are the global tick's: the region reads its
+            // snapshot at the start of its own tick (`Game::read_global`). A game just lent is given the
+            // tick's other settings (its ticket levels) here, while it is still home.
             if first || std::mem::take(&mut slot.fresh) {
                 w.copy_tick_settings_from(self);
-            } else {
-                w.copy_clock_from(self);
             }
             w.refill_entity_ids(&pool);
-            w.streaming.sky_light = self.streaming.sky_light;
-            w.world.game_time = self.world.game_time;
-            w.world.day_time = self.world.day_time;
-            w.world.weather = self.world.weather;
             if let (Some(shell), Some(host)) = (w.lan.as_mut(), self.lan.as_mut()) {
                 shell.hub.copy_region_settings(&host.hub);
                 host.hub.give_away(&mut shell.hub);
@@ -1553,7 +1584,12 @@ impl Game<'_> {
     /// wait is only for the part of their tick those phases did not cover. A flight of another level (a phase
     /// that entered it and has not come back) is left for the level's own tick.
     pub(super) fn finish_flight_here(&mut self) -> Result<()> {
-        if self.regions.flight.as_ref().is_some_and(|f| f.0 == self.dim) {
+        if self
+            .regions
+            .flight
+            .as_ref()
+            .is_some_and(|f| f.0 == self.dim)
+        {
             self.finish_flight()?;
         }
         Ok(())
@@ -1852,7 +1888,9 @@ impl Game<'_> {
             self.regions.spares.give(w);
             set.games.remove(k);
             // What was queued for the region goes to the server's game: its players are gone, and so is it.
-            self.regions.tasks.merge_region(id, super::region_tasks::SERVER);
+            self.regions
+                .tasks
+                .merge_region(id, super::region_tasks::SERVER);
             return false;
         }
         let guests = host
@@ -2190,6 +2228,8 @@ impl Game<'_> {
 
     /// One region game's phases of the tick: the level's entities and blocks in its chunks, around its players.
     pub(super) fn tick_region_phases(&mut self) -> Result<()> {
+        // The level's clock, weather, rules and border as the global tick last published them.
+        self.read_global();
         // What other regions asked of this one, before the tick's own work.
         self.run_region_tasks();
         self.level_pass = super::levels::Pass {
@@ -2263,6 +2303,8 @@ impl Game<'_> {
         let sky_light = self.streaming.sky_light;
         self.streaming
             .relight_region_edits(&mut self.world, sky_light, REGION_RELIGHT_PER_TICK);
+        // What the global tick needs of this region: its living players and its mob counts.
+        self.send_census();
         Ok(())
     }
 }
@@ -2372,7 +2414,12 @@ impl Game<'_> {
         let mut grew = false;
         let mut owners: FxHashSet<RegionId> = FxHashSet::default();
         for (&section, &kind) in &desired {
-            if self.regions.area.get(&section).is_some_and(|&have| have >= kind) {
+            if self
+                .regions
+                .area
+                .get(&section)
+                .is_some_and(|&have| have >= kind)
+            {
                 continue;
             }
             match link.shared.map.claim(link.id, section, kind) {
@@ -2478,10 +2525,7 @@ impl Game<'_> {
         }
         dest.regions.area = area;
         dest.regions.topology_seen = None;
-        dest.regions.link = Some(RegionLink {
-            id,
-            ..link.clone()
-        });
+        dest.regions.link = Some(RegionLink { id, ..link.clone() });
         Ok(Born {
             game: dest,
             id,
@@ -2522,7 +2566,8 @@ impl Game<'_> {
             .collect();
         let mut merged = false;
         for (a, b) in asked {
-            let position = |set: &ResidentSet, id: RegionId| set.games.iter().position(|s| s.uid == id);
+            let position =
+                |set: &ResidentSet, id: RegionId| set.games.iter().position(|s| s.uid == id);
             let forget = |set: &ResidentSet| {
                 set.shared
                     .merges
@@ -2557,7 +2602,11 @@ impl Game<'_> {
                 continue;
             };
             big.absorb_region(&mut small);
-            log::info!("regions: region {} merged into region {}", gone_slot.uid, slot.uid);
+            log::info!(
+                "regions: region {} merged into region {}",
+                gone_slot.uid,
+                slot.uid
+            );
             set.shared.map.reassign(gone_slot.uid, slot.uid);
             self.regions.tasks.merge_region(gone_slot.uid, slot.uid);
             slot.conns.append(&mut gone_slot.conns);
@@ -2598,8 +2647,7 @@ pub(super) fn terrain_owed(w: &Game<'_>, lent: &FxHashSet<(i32, i32)>) -> bool {
     let view = h.hub.config.view_distance.clamp(2, 32);
     h.hub.guests.iter().filter(|g| h.hub.here(g)).any(|g| {
         let (cx, cz) = g.chunk();
-        (cx - view..=cx + view)
-            .any(|x| (cz - view..=cz + view).any(|z| !lent.contains(&(x, z))))
+        (cx - view..=cx + view).any(|x| (cz - view..=cz + view).any(|z| !lent.contains(&(x, z))))
     })
 }
 
@@ -2897,7 +2945,9 @@ impl Game<'_> {
         let mut jukebox_sounds = split_map(&mut self.jukebox_sounds, regions, |p| block_chunk(*p));
         let mut lid_openers = split_map(&mut self.lid_openers, regions, |p| block_chunk(*p));
         let mut knot_ids = split_map(&mut self.knot_ids, regions, array_chunk);
-        let mut scanned = self.creaking.split_scanned(n, |key| regions.of_chunk(key), scope_ref);
+        let mut scanned = self
+            .creaking
+            .split_scanned(n, |key| regions.of_chunk(key), scope_ref);
         let mut lectern_pulses: Vec<Vec<((i32, i32, i32), i32)>> =
             (0..n).map(|_| Vec::new()).collect();
         self.lectern_pulses
@@ -3015,13 +3065,17 @@ pub(super) mod tests {
     }
 
     #[test]
-    fn a_player_who_stays_dead_lands_their_region_once_for_the_death_and_not_again_until_they_respawn() {
+    fn a_player_who_stays_dead_lands_their_region_once_for_the_death_and_not_again_until_they_respawn()
+     {
         crate::game::native_guest_turn_tests::with_guests(|game| {
             let wants = |game: &Game<'_>| wants_land(game);
             assert!(!wants(game), "two living players want nothing");
             let host = game.lan.as_mut().unwrap();
             host.hub.update_guest(12, |g| g.health = 0.0).unwrap();
-            assert!(wants(game), "a player dying: the death is for the server's thread");
+            assert!(
+                wants(game),
+                "a player dying: the death is for the server's thread"
+            );
             // The region goes out with the player and comes home for it.
             let host = game.lan.as_mut().unwrap();
             let mut region = host.hub.region_shell();
@@ -3033,7 +3087,10 @@ pub(super) mod tests {
             host.hub.take_guests_back(&mut region);
             host.hub.update_guest(12, |g| g.dead = true).unwrap();
             for _ in 0..100 {
-                assert!(!wants(game), "a dead player's region is lent again and stays out");
+                assert!(
+                    !wants(game),
+                    "a dead player's region is lent again and stays out"
+                );
             }
             // Their respawn is theirs to ask for; once alive, the next death lands once more.
             game.guest_respawn(12);
@@ -3296,10 +3353,9 @@ pub(super) mod tests {
     }
 
     fn guest_conns(game: &Game<'_>) -> Vec<u32> {
-        let mut conns: Vec<u32> = game
-            .lan
-            .as_ref()
-            .map_or(Vec::new(), |h| h.hub.guests.iter().map(|g| g.conn).collect());
+        let mut conns: Vec<u32> = game.lan.as_ref().map_or(Vec::new(), |h| {
+            h.hub.guests.iter().map(|g| g.conn).collect()
+        });
         conns.sort_unstable();
         conns
     }
@@ -3331,10 +3387,26 @@ pub(super) mod tests {
             assert!(b.world.chunks.contains_key(&(300, 0)));
             // The sections: the far ones are the new region's in the map, and the region's own area lost them.
             let link = a.regions.link.clone().unwrap();
-            assert_eq!(shared.map.owner_of_chunk((300, 0)).map(|o| o.id), Some(born.id));
-            assert_eq!(shared.map.owner_of_chunk((0, 0)).map(|o| o.id), Some(link.id));
-            assert!(a.regions.area.keys().all(|s| shared.map.owner(*s).map(|o| o.id) == Some(link.id)));
-            assert!(b.regions.area.keys().all(|s| shared.map.owner(*s).map(|o| o.id) == Some(born.id)));
+            assert_eq!(
+                shared.map.owner_of_chunk((300, 0)).map(|o| o.id),
+                Some(born.id)
+            );
+            assert_eq!(
+                shared.map.owner_of_chunk((0, 0)).map(|o| o.id),
+                Some(link.id)
+            );
+            assert!(
+                a.regions
+                    .area
+                    .keys()
+                    .all(|s| shared.map.owner(*s).map(|o| o.id) == Some(link.id))
+            );
+            assert!(
+                b.regions
+                    .area
+                    .keys()
+                    .all(|s| shared.map.owner(*s).map(|o| o.id) == Some(born.id))
+            );
             // Both are regions that stand on their own: nobody asks for anything more.
             assert!(report.wants.is_none());
             assert_eq!(*shared.merges.lock().unwrap(), Default::default());
@@ -3391,17 +3463,28 @@ pub(super) mod tests {
             spares.give(spare);
             let born = a.region_topology().born.into_iter().next().unwrap();
             let mut b = born.game;
-            assert!(Arc::ptr_eq(&a.regions.tasks, &b.regions.tasks), "one set of queues for the server");
+            assert!(
+                Arc::ptr_eq(&a.regions.tasks, &b.regions.tasks),
+                "one set of queues for the server"
+            );
             let arrival = Arrival {
                 dim: a.dim,
                 position: [4800.5, 70.0, 5.5],
                 rotation: Some([90.0, 10.0]),
             };
             // The command that teleports player 12 queues a task for them; their region runs it at its tick.
-            a.regions.tasks.entity(12, move |owner| owner.teleport_player_task(12, arrival), None);
+            a.regions.tasks.entity(
+                12,
+                move |owner| owner.teleport_player_task(12, arrival),
+                None,
+            );
             assert_eq!(a.regions.tasks.entity_len(12), 1);
             b.run_region_tasks();
-            assert_eq!(a.regions.tasks.entity_len(12), 1, "the region that does not hold them leaves it");
+            assert_eq!(
+                a.regions.tasks.entity_len(12),
+                1,
+                "the region that does not hold them leaves it"
+            );
             a.run_region_tasks();
             // They left A's game with what is kept for them and wait in the queue of the region that owns the
             // place; B takes them in at its own next tick.
@@ -3411,12 +3494,22 @@ pub(super) mod tests {
             // A task for the player queued meanwhile follows them: B runs it, not A.
             let ran = Arc::new(AtomicU32::new(0));
             let seen = Arc::clone(&ran);
-            a.regions.tasks.entity(12, move |_| { seen.fetch_add(1, Ordering::Relaxed); }, None);
+            a.regions.tasks.entity(
+                12,
+                move |_| {
+                    seen.fetch_add(1, Ordering::Relaxed);
+                },
+                None,
+            );
             a.run_region_tasks();
             assert_eq!(ran.load(Ordering::Relaxed), 0);
             b.run_region_tasks();
             assert_eq!(guest_conns(&b), [12, 13]);
-            assert_eq!(ran.load(Ordering::Relaxed), 1, "their new region ran the task queued for them");
+            assert_eq!(
+                ran.load(Ordering::Relaxed),
+                1,
+                "their new region ran the task queued for them"
+            );
             let g = b.lan.as_ref().unwrap().hub.guest(12).unwrap();
             assert_eq!(g.position, [4800.5, 70.0, 5.5]);
             assert_eq!((g.yaw, g.pitch), (90.0, 10.0));
@@ -3433,7 +3526,10 @@ pub(super) mod tests {
             let born = a.region_topology().born.into_iter().next().unwrap();
             let mut b = born.game;
             assert!(matches!(a.place_of_remote(13), Answer::Asked));
-            assert!(matches!(a.place_of_remote(13), Answer::Asked), "asked once, still waiting");
+            assert!(
+                matches!(a.place_of_remote(13), Answer::Asked),
+                "asked once, still waiting"
+            );
             assert_eq!(a.regions.tasks.entity_len(13), 1);
             // The player's own region answers at the start of its tick.
             b.run_region_tasks();
@@ -3445,6 +3541,128 @@ pub(super) mod tests {
             assert_eq!(place.dim, a.dim);
             // The answer is used up: a later question is a new one.
             assert!(matches!(a.place_of_remote(13), Answer::Asked));
+        });
+    }
+    #[test]
+    fn time_weather_and_gamerule_run_in_the_region_of_the_player_who_typed_them() {
+        use horizon_protocol::packets::play::{ChatCommand, Serverbound};
+        crate::game::native_guest_turn_tests::with_guests(|game| {
+            let hub = &game.lan.as_ref().unwrap().hub;
+            let typed = |line: &str| {
+                Serverbound::ChatCommand(ChatCommand {
+                    command: line.to_owned(),
+                })
+            };
+            for line in [
+                "time set day",
+                "/time add 100",
+                "weather rain 600",
+                "gamerule keep_inventory true",
+                "time query daytime",
+            ] {
+                assert!(hub.away_local(&typed(line)), "{line} stays in its region");
+            }
+            // A command that merely starts like one, or reaches players, brings every region home.
+            for line in [
+                "timer",
+                "execute as @a run time set day",
+                "kill @a",
+                "give Bob stone",
+            ] {
+                assert!(!hub.away_local(&typed(line)), "{line} lands the regions");
+            }
+        });
+    }
+
+    #[test]
+    #[ignore = "daily"]
+    fn a_regions_time_weather_and_rules_are_the_global_ticks_and_its_changes_reach_every_region() {
+        use super::super::global_tick::Change;
+        region_of_two_far_players(|a, mut home, _shared, _spares| {
+            home.regions.worker = false;
+            home.regions.global = Arc::clone(&a.regions.global);
+            home.regions.tasks = Arc::clone(&a.regions.tasks);
+            home.dim = a.dim;
+            // The global tick publishes the level: the region reads it at the start of its tick.
+            home.world.day_time = 1000;
+            home.world.game_time = 5000;
+            home.publish_global();
+            a.read_global();
+            assert_eq!((a.world.day_time, a.world.game_time), (1000, 5000));
+            // The region's /weather and /gamerule change its own copy at once and tell the global tick.
+            let rain = Change::Weather {
+                clear: 0,
+                time: 600,
+                raining: true,
+                thundering: false,
+            };
+            rain.apply(a);
+            a.global_change(rain);
+            let rule = Change::Rule {
+                name: "minecraft:keep_inventory".to_owned(),
+                value: horizon_client::gamerules::Value::Bool(true),
+            };
+            rule.apply(a);
+            a.global_change(rule);
+            assert!(a.world.weather.raining);
+            assert!(
+                !home.world.weather.raining,
+                "the level has not heard of it yet"
+            );
+            // The global tick takes the messages in, applies them and publishes: the change is acknowledged.
+            home.tick_global();
+            home.publish_global();
+            assert!(home.world.weather.raining);
+            assert_eq!(home.world.weather.rain_time, 600);
+            assert!(
+                home.ui
+                    .rules
+                    .bool_at(horizon_client::gamerules::vanilla::KEEP_INVENTORY)
+            );
+            // The region read what it sent back, and has nothing left to apply again.
+            a.read_global();
+            assert!(a.regions.unacked.is_empty());
+            assert!(a.world.weather.raining);
+            // Another region that never sent anything reads the same level at its next tick.
+            let view = home.regions.global.snapshot(home.dim).unwrap();
+            assert!(view.weather.raining);
+            assert!(
+                view.rules
+                    .bool_at(horizon_client::gamerules::vanilla::KEEP_INVENTORY)
+            );
+        });
+    }
+
+    #[test]
+    #[ignore = "daily"]
+    fn a_level_wide_spawn_is_granted_to_one_region_and_run_there_once() {
+        use super::super::global_tick::{Census, SpawnerKind};
+        region_of_two_far_players(|a, mut home, _shared, _spares| {
+            home.regions.worker = false;
+            home.regions.global = Arc::clone(&a.regions.global);
+            home.regions.tasks = Arc::clone(&a.regions.tasks);
+            home.dim = a.dim;
+            // The global tick knows the region (7) holds the only living players.
+            home.regions.gstate.record(
+                home.dim,
+                7,
+                Census {
+                    alive: 2,
+                    ..Census::default()
+                },
+                0,
+            );
+            assert_eq!(
+                home.grant_spawn(SpawnerKind::Cat),
+                None,
+                "sent, not run here"
+            );
+            assert_eq!(a.regions.tasks.region_len(7), 1);
+            assert_eq!(a.regions.global.open_grants(), 1);
+            // The region claims it at the start of its next tick, and it is used up.
+            a.run_region_tasks();
+            assert_eq!(a.regions.global.open_grants(), 0);
+            assert_eq!(a.regions.tasks.region_len(7), 0);
         });
     }
 }

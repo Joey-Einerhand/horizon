@@ -35,6 +35,9 @@ impl Game<'_> {
             .rules
             .bool_at(horizon_client::gamerules::vanilla::SPAWN_MONSTERS)
             && self.ui.difficulty != 0;
+        // A region's game never counts a level-wide spawner: the countdowns are the global tick's, and the
+        // region is granted the attempts (game/runtime/global_tick.rs). A mod's spawner still ticks here.
+        let region = self.region_id().is_some();
         let mut at = 0;
         while let Some(entry) = self.creatures.custom_spawners[&dim]
             .entries()
@@ -43,6 +46,12 @@ impl Game<'_> {
         {
             at += 1;
             match entry {
+                SpawnerEntry::Builtin(
+                    SpawnerKind::WanderingTrader
+                    | SpawnerKind::Patrol
+                    | SpawnerKind::Cat
+                    | SpawnerKind::VillageSiege,
+                ) if region => {}
                 SpawnerEntry::Builtin(SpawnerKind::WanderingTrader) => self.tick_wandering_trader(),
                 SpawnerEntry::Builtin(SpawnerKind::Patrol) => self.tick_patrol_spawner(),
                 SpawnerEntry::Builtin(SpawnerKind::Cat) => self.tick_cat_spawner(),

@@ -1,6 +1,7 @@
 //! `WanderingTraderSpawner`: every 1200 ticks the spawn delay counts down;
 //! when it runs out a trader may appear near the player (or the nearest
 //! bell), bringing two llamas on leads, and wanders off after two days.
+use super::global_tick::SpawnerKind;
 use super::{Dim, Game, creatures::Creatures};
 use horizon_client::save::{read_dat, write_dat};
 use horizon_gameplay::wandering_trader::TraderLevel;
@@ -50,8 +51,24 @@ impl Game<'_> {
         }
         self.load_trader_data();
         let mut trader = std::mem::take(&mut self.creatures.trader);
-        trader.tick(self);
+        if self.global_mode() {
+            // With regions out the countdown is the level's, counted here once; the attempt is one region's
+            // (game/runtime/global_tick.rs).
+            if trader.attempt_due(&mut self.world.random) {
+                match self.grant_spawn(SpawnerKind::Trader) {
+                    Some(true) => trader.spawned(),
+                    Some(false) | None => {}
+                }
+            }
+        } else {
+            trader.tick(self);
+        }
         self.creatures.trader = trader;
+    }
+    /// The attempt of `WanderingTraderSpawner.tick` once its countdown ran out and the chance was rolled, run for
+    /// the players this game holds: true when a trader appeared, or nobody was alive to spawn it near.
+    pub(super) fn spawn_trader_attempt(&mut self) -> bool {
+        horizon_gameplay::wandering_trader::spawn(self)
     }
     /// `WanderingTraderSpawner.spawn`.
     fn spawn_trader(&mut self) -> bool {
@@ -72,12 +89,7 @@ impl Game<'_> {
     }
     /// The closest bell (`PoiTypes.MEETING`) within `range` blocks.
     fn nearest_bell(&self, from: [i32; 3], range: i32) -> Option<[i32; 3]> {
-        horizon_gameplay::wandering_trader::nearest_bell(
-            &self.world,
-            self.res.facts(),
-            from,
-            range,
-        )
+        horizon_gameplay::wandering_trader::nearest_bell(&self.world, self.res.facts(), from, range)
     }
 }
 

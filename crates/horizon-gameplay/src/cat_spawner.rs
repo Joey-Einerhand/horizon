@@ -35,31 +35,37 @@ impl CatSpawner {
         if !l.overworld() || !self.due() {
             return;
         }
-        // ServerLevel.getRandomPlayer: one of the living players.
-        let alive: Vec<Vec3> = l
-            .players()
-            .into_iter()
-            .filter(|p| p.alive)
-            .map(|p| p.position)
-            .collect();
-        let p = l.parts();
-        let Some(pos) = candidate(&mut p.world.random, &alive, &p.world.chunks) else {
-            return;
-        };
-        if !l.is_spawn_position_ok("minecraft:cat", Species::Cat, pos) {
-            return;
+        attempt(l);
+    }
+}
+
+/// What `CatSpawner.tick` does once its countdown ran out: a cat near one of the level's living players.
+/// With regions the countdown is the global tick's and the region holding the player it picked runs this.
+pub fn attempt(l: &mut impl CatLevel) {
+    // ServerLevel.getRandomPlayer: one of the living players.
+    let alive: Vec<Vec3> = l
+        .players()
+        .into_iter()
+        .filter(|p| p.alive)
+        .map(|p| p.position)
+        .collect();
+    let p = l.parts();
+    let Some(pos) = candidate(&mut p.world.random, &alive, &p.world.chunks) else {
+        return;
+    };
+    if !l.is_spawn_position_ok("minecraft:cat", Species::Cat, pos) {
+        return;
+    }
+    if sections_to_village(&l.village_centers(), section(pos)) <= 2 {
+        if village_takes_cat(l.parts().mobs, pos) {
+            l.spawn_cat(pos, false);
         }
-        if sections_to_village(&l.village_centers(), section(pos)) <= 2 {
-            if village_takes_cat(l.parts().mobs, pos) {
-                l.spawn_cat(pos, false);
-            }
-        } else {
-            let hut = l.structure_tag("minecraft:cats_spawn_in");
-            if l.structures_at(pos).iter().any(|s| hut.contains(s))
-                && hut_takes_cat(l.parts().mobs, pos)
-            {
-                l.spawn_cat(pos, true);
-            }
+    } else {
+        let hut = l.structure_tag("minecraft:cats_spawn_in");
+        if l.structures_at(pos).iter().any(|s| hut.contains(s))
+            && hut_takes_cat(l.parts().mobs, pos)
+        {
+            l.spawn_cat(pos, true);
         }
     }
 }

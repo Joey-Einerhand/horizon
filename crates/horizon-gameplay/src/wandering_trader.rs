@@ -102,13 +102,19 @@ impl Spawner {
     pub fn spawned(&mut self) {
         self.chance = MIN_CHANCE;
     }
+    /// The level-wide half of `WanderingTraderSpawner.tick`: the clock and the roll against the
+    /// chance. True when a spawn attempt is due; the attempt is [`spawn`] on a level that holds
+    /// players, and [`Spawner::spawned`] follows when it succeeded.
+    pub fn attempt_due(&mut self, random: &mut impl RandomSource) -> bool {
+        let Some(chance) = self.due() else {
+            return false;
+        };
+        random.next_int_bound(100).unwrap_or(100) <= chance
+    }
     /// `WanderingTraderSpawner.tick` once its data is loaded: the clock,
     /// the chance, then the spawn.
     pub fn tick(&mut self, l: &mut impl TraderLevel) {
-        let Some(chance) = self.due() else {
-            return;
-        };
-        if l.parts().world.random.next_int_bound(100).unwrap_or(100) <= chance && l.spawn_trader() {
+        if self.attempt_due(&mut l.parts().world.random) && l.spawn_trader() {
             self.spawned();
         }
     }

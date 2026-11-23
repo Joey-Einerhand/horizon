@@ -1,4 +1,5 @@
 use crate::game::Game;
+use crate::game::global_tick::Change;
 use horizon_gameplay::commands::time::TimeHost;
 
 impl TimeHost for Game<'_> {
@@ -14,23 +15,40 @@ impl TimeHost for Game<'_> {
     fn clock_time(&self, clock: &str) -> i64 {
         self.command_clock_time(clock)
     }
+    // A command run in a region changes the region's copy and tells the global tick, which owns the clock
+    // (game/runtime/global_tick.rs); `global_change` does nothing on the server's own game.
     fn set_clock_time(&mut self, clock: &str, total: i64) {
         self.set_command_clock_time(clock, total);
+        self.global_change(Change::ClockTime {
+            clock: clock.to_owned(),
+            total,
+        });
     }
     fn clock_paused(&mut self, clock: &str) -> bool {
         self.command_clock_state(clock).paused
     }
     fn set_clock_paused(&mut self, clock: &str, paused: bool) {
         self.command_clock_state(clock).paused = paused;
+        self.global_change(Change::ClockPaused {
+            clock: clock.to_owned(),
+            paused,
+        });
     }
     fn clock_rate(&mut self, clock: &str) -> f32 {
         self.command_clock_state(clock).rate
     }
     fn set_clock_rate(&mut self, clock: &str, rate: f32) {
         self.command_clock_state(clock).rate = rate;
+        self.global_change(Change::ClockRate {
+            clock: clock.to_owned(),
+            rate,
+        });
     }
     fn reset_clock_partial(&mut self, clock: &str) {
         self.command_clock_state(clock).partial = 0.0;
+        self.global_change(Change::ClockPartial {
+            clock: clock.to_owned(),
+        });
     }
     fn time_skip_canceled(&mut self, from: i64, to: i64) -> bool {
         let mut cancel = false;

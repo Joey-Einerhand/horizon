@@ -38,14 +38,23 @@ pub trait SiegeLevel: CustomSpawnerLevel {
 
 /// `VillageSiege.tick`.
 pub fn tick<L: SiegeLevel + ?Sized>(l: &mut L) {
+    if night(l) {
+        run(l);
+    }
+}
+
+/// The level-wide half of `VillageSiege.tick`: the day ends a siege, and at midnight one night in ten is
+/// a siege night. True while tonight is one. With regions it is the global tick's, and the first region
+/// with a player standing in a village claims the night and runs [`run`].
+pub fn night<L: SiegeLevel + ?Sized>(l: &mut L) -> bool {
     if !l.overworld() {
-        return;
+        return false;
     }
     if l.sky_darken() < 4 || !l.spawn_mobs_and_monsters() {
         let siege = l.siege();
         siege.tonight = false;
         siege.set_up = false;
-        return;
+        return false;
     }
     // ClockTimeMarkers.ROLL_VILLAGE_SIEGE: tick 18000 of the 24000 tick day.
     let world = l.parts().world;
@@ -53,11 +62,47 @@ pub fn tick<L: SiegeLevel + ?Sized>(l: &mut L) {
         let tonight = world.random.next_int_bound(10).unwrap_or(1) == 0;
         l.siege().tonight = tonight;
     }
-    if !l.siege().tonight {
-        return;
+    l.siege().tonight
+}
+
+impl VillageSiege {
+    /// Tonight is a siege night, as the global tick decided it (a region's copy of the state).
+    pub fn set_tonight(&mut self, tonight: bool) {
+        self.tonight = tonight;
+        if !tonight {
+            self.set_up = false;
+        }
     }
+    /// The spot is chosen: this region runs the siege.
+    pub fn is_set_up(&self) -> bool {
+        self.set_up
+    }
+    /// A region that lost the claim on the night drops what its failed setup chose.
+    pub fn abandon(&mut self) {
+        self.tonight = false;
+        self.set_up = false;
+        self.zombies_to_spawn = 0;
+    }
+    /// The siege has no zombies left to spawn and is over for tonight.
+    pub fn is_over(&self) -> bool {
+        !self.tonight
+    }
+}
+
+/// What `VillageSiege.tick` does on a siege night: the spot, then the zombies.
+pub fn run<L: SiegeLevel + ?Sized>(l: &mut L) {
+    run_claiming(l, &mut || true);
+}
+
+/// [`run`], asking `claim` once the spot is chosen: with regions only one region may run tonight's siege.
+/// When the claim is refused the setup is dropped and the siege is not this level's to run.
+pub fn run_claiming<L: SiegeLevel + ?Sized>(l: &mut L, claim: &mut dyn FnMut() -> bool) {
     if !l.siege().set_up {
         if !l.try_to_setup_siege() {
+            return;
+        }
+        if !claim() {
+            l.siege().abandon();
             return;
         }
         l.siege().set_up = true;

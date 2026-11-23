@@ -18,6 +18,20 @@ impl Game<'_> {
         raining: bool,
         thundering: bool,
     ) {
+        // A region's `/weather`: the weather is the global tick's. The region changes its copy and sends the
+        // change, which the global tick applies once, with the mods' hooks; with mods loaded the hooks have to
+        // run here first, so the old path keeps them.
+        if self.region_id().is_some() && mod_api::__private::mods().is_empty() {
+            let change = crate::game::global_tick::Change::Weather {
+                clear,
+                time,
+                raining,
+                thundering,
+            };
+            change.apply(self);
+            self.global_change(change);
+            return;
+        }
         let previous = (
             self.world.weather.clear_time,
             self.world.weather.rain_time,

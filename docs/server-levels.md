@@ -14,6 +14,7 @@ dimensions at the same time.
 - [What's checked](#whats-checked)
 - [A data pack's levels](#a-data-packs-levels)
 - [Viewed levels](#viewed-levels)
+- [The global tick](#the-global-tick)
 - [Not done yet](#not-done-yet)
 
 ## How the single-level `Game` maps onto vanilla's levels
@@ -132,6 +133,60 @@ portals. The spec is arismoko/horizon#3716. Built so far: the channel, the clien
 An area is not a player: it stays out of `Guest::placed_in` and `Guest::watches_level`, so spawning,
 sleeping, raids, spawners and the dragon fight count real players only. A vanilla client is never asked,
 and an older Horizon client ignores the query, so both view none and are sent nothing.
+
+## The global tick
+
+With `[regions]` on, a level's chunks, entities and players live in regions that tick on their own threads
+([hosting](hosting.md#region-ticking-regions)). What belongs to the whole level and to no chunk is the **global
+tick**'s: `game/runtime/global_tick.rs`. Today the server thread's own `Game` runs it (it ticks nothing a region
+owns); the state it owns is listed here so that the step that gives it a thread of its own moves only the
+holder, not the fields.
+
+A region **reads a snapshot** of it at the start of its tick (`LevelState`, one `Arc` per level, published by the
+global tick, read under a lock held for one pointer swap) and **sends it messages** for what it changes
+(`Message`, appended to one inbox the global tick empties at its tick). No region waits for the global tick, and it
+never waits for a region: a message is an append, a snapshot a pointer read, and nothing replies.
+
+| Moves to the global tick | Where it is today | How regions meet it |
+| --- | --- | --- |
+| Game time, day time, the clocks (`/time`: total, paused, rate), tick count | `Game::clock`, `Game::ticks`, `World::game_time`, `World::day_time` | snapshot |
+| Weather: raining, thundering, the clear, rain and thunder timers, the rain and thunder levels | `World::weather` | snapshot; `/weather` sends `Change::Weather` |
+| Lightning scheduling: the weather timers above (a strike is rolled per chunk, by the region that owns the chunk) | `tick_weather_effects` | snapshot |
+| The world border | `Game::border` | snapshot |
+| Game rules, the difficulty and its lock | `Game::ui.rules`, `ui.difficulty`, `level.difficulty_locked` | snapshot; `/gamerule` sends `Change::Rule` |
+| Level data (level.dat: spawn point, seed, flags) | `Game::level` | snapshot, refreshed once a second |
+| The wandering trader's clock and chance (and `wandering_trader.dat`) | `Creatures::trader` | a region is *granted* an attempt |
+| The patrol spawner's countdown | `Raiding::patrol` | a region is granted an attempt |
+| The phantom spawner's countdown | `Stats::phantom_tick` | every region with a player is granted a pass |
+| The cat spawner's countdown | `Creatures::cat` | a region is granted an attempt |
+| The village siege's night and who runs it | `Raiding::siege` | one region claims the night |
+| Mob caps: the level's spawnable chunk count and its mobs per category | counted from the game's own chunks | regions report a census, and read the sum of the others' |
+
+What stays with the regions, and why: the level's random (one stream per region), the chunks and everything in
+them, block ticks, `tick_thunder`'s per-chunk strikes, the world border's *effects* on the players of a region,
+and the `Hub` that sends each region's players their clock, weather and border packets from the snapshot. The
+player list, tab list, scoreboard, boss bars and chat are not in this step: another one moves them.
+
+**A level-wide spawner counts once, on the global tick.** Vanilla's spawners count down once a level tick and then
+pick one player (the trader, the cats, the patrols) or each player (the phantoms) at random. With regions each
+region used to run its own copy, so 200 regions attempted 200 times as often. Now the global tick counts, rolls
+the chance, and sends the attempt to one region as a *grant*: the region is picked with odds in proportion to
+its living players, and the region picks one of its own players, so a player's odds are vanilla's. A grant is a
+ticket the region claims once; one that is not claimed in 40 ticks (its region merged or landed) is given to
+another. The region does the rest of vanilla's function (the spawn position, the village and biome checks, the
+mobs) and tells the global tick whether it spawned, for the trader's chance. The village siege is decided on the
+global tick (one night in ten at midnight); the first region with a player standing in a village claims it and
+runs its zombies.
+
+**Mob caps** are vanilla's `limit × spawnable chunks ÷ 289` against the level's count. A region counts its own
+chunks and mobs, sends them as a census each tick, and spawns against its own numbers plus the global tick's
+sum of every other region's last census. The census lags a tick, so a level exactly at its cap may be one pack
+over it for a tick.
+
+**`/time`, `/weather` and `/gamerule` take effect in every region at its next tick, with no landing.** The region of
+the player who typed one runs the command (as for `/tps`), changes its own copy at once, and sends the change.
+The global tick applies it, publishes the snapshot, and the region that sent it reapplies what the snapshot does
+not hold yet, so its own players never see the old value come back for a tick.
 
 ## Not done yet
 

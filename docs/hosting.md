@@ -920,12 +920,17 @@ The environment variables still override it: `HORIZON_PARALLEL_TICK=0` keeps eve
 Region ticking trades some of vanilla's behaviour for speed, the way other region-threaded servers do. With it on:
 
 - **Order.** Regions tick at the same time, so what happens in one region and what happens in another in the same
-  tick has no order, and the random draws are not the ones a serial tick would make. Regions read the clock and the
-  weather one tick late.
+  tick has no order, and the random draws are not the ones a serial tick would make. The clock, the weather, the
+  world border, the game rules and the level data are the level's own (the global tick's, [server-levels.md](
+  server-levels.md#the-global-tick)): a region reads a snapshot of them at the start of its tick, so it sees them one
+  tick late, and never waits for them.
 - **Things that need the whole level bring regions home first.** Commands (the console's too), datapack tick
   functions, a join or a leave, a death, a save, and a native mod's hook for a player make the regions involved
   (often all of them) come back to the server's thread before they run. They work as without regions; a datapack
-  that runs every tick, or a busy command line, costs most of the gain. Teleports are the exception, below.
+  that runs every tick, or a busy command line, costs most of the gain. Teleports are an exception, below, and so
+  are `/time`, `/weather` and `/gamerule`: the region of the player who typed one runs it, with no region coming
+  home, and the change is in every region at its next tick. Its feedback reaches the operators of that region
+  (the console and the log get it too).
 - **Teleports hand the player to the region that owns the place.** A player who is teleported (a command, a
   portal, a respawn, a mod, another region's task) goes to the region that owns where they arrive, in their level
   or in another, and no other region comes home for it. A place no region owns gets a region of its own; a level
@@ -946,8 +951,14 @@ Region ticking trades some of vanilla's behaviour for speed, the way other regio
 - **Scores** a region's players change reach the clients when the region comes home.
 - **Raids and the dragon fight** run on the server's thread: a level with a raid near a player, and the End until its
   dragon is killed, are not split. A raid a player starts in a region brings that region home.
-- **The level-wide spawners** (wandering trader, pillager patrols, cats, phantoms, zombie sieges) count down in each
-  region on their own, so a server with many regions may see them more often than vanilla does.
+- **The level-wide spawners** (wandering trader, pillager patrols, cats, phantoms, zombie sieges) count down once,
+  on the global tick, as in vanilla. When one is due it picks a region, with odds in proportion to the region's
+  living players, and that region runs the attempt for one of its own players (the phantoms: every region with a
+  player runs its pass), so a player's odds and the rate are vanilla's however many regions there are. A zombie
+  siege is decided once a night; the first region with a player standing in a village runs it.
+- **Mob caps** are the level's: a region counts the mobs and the spawnable chunks of its own part, and spawns against
+  them plus the other regions' counts as the global tick last summed them. The sum is a tick old, so a level at
+  its cap may go over it by one pack for a tick.
 - **The anticheat** checks each region's players on that region's thread, with the same settings, log and kicks.
   Its chat alerts reach the operators in the same region; the console and the log get every one.
 - **Native mods** are called from a region's thread for that region's players and chunks. A mod that keeps state of

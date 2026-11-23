@@ -1,11 +1,7 @@
 //! The game's side of `NaturalSpawner` (`mobs::spawn_selection`): the level
 //! it reads, the spawning chunks and caps of `ServerChunkCache.tickChunks`,
 //! and the mobs it adds (finalized with the game's `finalizeSpawn`).
-use super::{
-    Dim, Game,
-    creatures::Finalized,
-    structures::reaches_in,
-};
+use super::{Dim, Game, creatures::Finalized, structures::reaches_in};
 use horizon_client::vanillagen::VanillaTerrain;
 use horizon_client::{
     biome::{BiomeInfo, SpawnEntry},
@@ -683,7 +679,8 @@ impl<'g, 'a> GameLevel<'g, 'a> {
                     created: Vec::new(),
                     jockey_rider: None,
                 };
-                group = horizon_client::mobs::finalize::finalize(&mut cx, &mut mob, r.reason, group);
+                group =
+                    horizon_client::mobs::finalize::finalize(&mut cx, &mut mob, r.reason, group);
                 for m in cx.created {
                     let bounds = m.bounds();
                     self.pending.borrow_mut().push(bounds);
@@ -1439,6 +1436,11 @@ impl<'a> Game<'a> {
             let mut state = self.natural_spawn_state(&level, spawnable, players, buffers, &counted);
             laps.lap("sn_state");
             last_state = state.counts();
+            // With regions the caps are the level's: this game's chunks and mobs, and the others' as the global
+            // tick last summed them (game/runtime/global_tick.rs).
+            if let Some((chunks, counts)) = self.level_wide_caps() {
+                state = state.with_others(chunks, counts);
+            }
             let categories = self.natural_categories(&state);
             laps.lap("sn_categories");
             // Util.shuffle.
@@ -1501,6 +1503,7 @@ impl<'a> Game<'a> {
         self.world.random = random;
         // ServerChunkCache.lastSpawnState, for the debug overlay.
         self.spawn_counts.insert(self.dim, last_state);
+        self.regions.last_caps = Some(last_state);
         let (created, rides) = extras;
         self.add_spawned(pending, created, rides, false);
         self.spawn_scratch = scratch;

@@ -66,17 +66,46 @@ impl PatrolSpawner {
         random: &mut R,
         spawn: &mut dyn FnMut(&L, Member, &mut R) -> bool,
     ) {
-        if !spawn_enemies || !level.spawn_patrols() {
+        if !self.due(
+            spawn_enemies,
+            level.spawn_patrols(),
+            || level.bright_outside(),
+            random,
+        ) {
             return;
+        }
+        self.attempt(level, random, spawn);
+    }
+
+    /// The level-wide half of [`PatrolSpawner::tick`]: the countdown, then the daylight check and the one
+    /// time in five. True when a patrol attempt is due. With regions it is the global tick's, and the region
+    /// holding the player it picked runs [`PatrolSpawner::attempt`].
+    pub fn due<R: RandomSource>(
+        &mut self,
+        spawn_enemies: bool,
+        spawn_patrols: bool,
+        bright_outside: impl FnOnce() -> bool,
+        random: &mut R,
+    ) -> bool {
+        if !spawn_enemies || !spawn_patrols {
+            return false;
         }
         self.next_tick -= 1;
         if self.next_tick > 0 {
-            return;
+            return false;
         }
         self.next_tick += 12000 + random.next_int_bound(1200).unwrap_or(0);
-        if !level.bright_outside() || random.next_int_bound(5).unwrap_or(1) != 0 {
-            return;
-        }
+        bright_outside() && random.next_int_bound(5).unwrap_or(1) == 0
+    }
+
+    /// What [`PatrolSpawner::tick`] does once an attempt is due: a random player, a spot 24 to 47 blocks from
+    /// them, and the patrol there.
+    pub fn attempt<L: PatrolLevel, R: RandomSource>(
+        &self,
+        level: &L,
+        random: &mut R,
+        spawn: &mut dyn FnMut(&L, Member, &mut R) -> bool,
+    ) {
         let players = level.patrol_players();
         if players.is_empty() {
             return;

@@ -2312,7 +2312,14 @@ impl Game<'_> {
         fn summon_custom_name(nbt: &str) -> Option<Text> {
             use horizon_core::nbt::Tag;
             const CONTENTS: [&str; 9] = [
-                "type", "text", "translate", "keybind", "score", "selector", "nbt", "sprite",
+                "type",
+                "text",
+                "translate",
+                "keybind",
+                "score",
+                "selector",
+                "nbt",
+                "sprite",
                 "player",
             ];
             let (tag, _) = horizon_core::nbt::parse_snbt(nbt).ok()?;
@@ -3328,6 +3335,17 @@ impl Game<'_> {
         value: Value,
         actor: Option<&mod_api::GameRuleActor<'_>>,
     ) {
+        // A region's `/gamerule`: the rules are the global tick's. The region changes its copy and sends the
+        // change, which the global tick applies once, with the mods' hooks and the dedicated server's events.
+        if self.region_id().is_some() && mod_api::__private::mods().is_empty() {
+            let change = crate::game::global_tick::Change::Rule {
+                name: rule.name.clone(),
+                value,
+            };
+            change.apply(self);
+            self.global_change(change);
+            return;
+        }
         if self.ui.rules.set(&rule.name, value) {
             self.game_rule_changed(&rule.name, value, actor);
         }
