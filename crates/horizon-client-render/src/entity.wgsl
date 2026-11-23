@@ -39,8 +39,21 @@ struct Globals {
     // mirrored (its screen runs right to left), else 1; y the clip-space depth its clip plane's
     // entities come forward (`fs_entity_clipped`), 0 without one; z 1 with a clip plane.
     world_view: vec4<f32>,
+    // The world warp (gfx/world_warp.rs): x 1 with one, y its radius, z the eye's radius.
+    world_warp: vec4<f32>,
 }
 @group(0) @binding(0) var<uniform> globals: Globals;
+// The world warp (gfx/world_warp.rs, `Globals.world_warp`): the bend a curved world, such as a
+// ringworld mod's, gives every camera-relative world position before the projection. A block
+// `p.x` blocks along X turns `p.x / y` radians about an axis `z` blocks above the camera. x 0
+// is no warp: the position comes back as it is.
+fn world_warp_point(p: vec3<f32>) -> vec3<f32> {
+    let w = globals.world_warp;
+    if w.x == 0.0 { return p; }
+    let a = p.x / w.y;
+    let s = w.z - p.y;
+    return vec3(s * sin(a), w.z - s * cos(a), p.z);
+}
 @group(0) @binding(1) var atlas: texture_2d<f32>;
 @group(0) @binding(2) var atlas_sampler: sampler;
 @group(0) @binding(3) var lightmap: texture_2d<f32>;
@@ -123,7 +136,7 @@ fn native_colored_light(pos: vec3<f32>) -> vec3<f32> {
 fn entity_vertex(position: vec3<f32>, uv: vec2<f32>,
     overlay: u32, color: vec4<f32>, light: vec4<u32>, normal: vec4<f32>) -> Out {
     var out: Out;
-    out.clip = globals.view_proj * vec4(position, 1.0);
+    out.clip = globals.view_proj * vec4(world_warp_point(position), 1.0);
     out.proj = vec4(out.clip.xy * 0.5 + out.clip.w * 0.5, out.clip.zw);
     out.uv = uv;
     let l = vec2(max(f32(light.y), dynamic_block_light(position)), f32(light.x));

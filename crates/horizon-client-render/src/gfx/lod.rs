@@ -792,6 +792,7 @@ mod tests {
                 super::super::world_projection(70.0, 16.0 / 9.0, 8192.0)
                     * crate::camera::view_matrix(0.0, 0.0),
             ),
+            warp: None,
         };
         // The tile origin is far behind, but its far edge reaches the camera.
         // Negative world origins therefore remain visible.

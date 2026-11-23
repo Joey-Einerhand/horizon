@@ -253,6 +253,7 @@ pub(super) fn shadow_casters(view_proj: Mat4, light: Vec3) -> [Frustum; 2] {
     }
     let [a, b] = [0, 6].map(|i| Frustum {
         planes: planes[i..i + 6].try_into().expect("six planes"),
+        warp: None,
     });
     [a, b]
 }
@@ -263,6 +264,7 @@ pub(super) fn taa_frustum(view_proj: Mat4, rendered_size: [u32; 2]) -> Frustum {
     let [x, y] = rendered_size.map(|size| 1.0 / (1.0 + 2.0 / size.max(1) as f32));
     Frustum {
         planes: frustum(Mat4::from_scale(Vec3::new(x, y, 1.0)) * view_proj),
+        warp: None,
     }
 }
 

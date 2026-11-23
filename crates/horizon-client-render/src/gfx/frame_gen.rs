@@ -114,6 +114,8 @@ pub struct Camera {
     pub near: f32,
     pub far: f32,
     pub fov_y: f32,
+    /// `WorldWarp::uniform` of the frame's warp, which moving things are drawn with.
+    pub world_warp: [f32; 4],
 }
 
 impl FrameGen {
@@ -371,6 +373,7 @@ impl FrameGen {
             camera.jittered,
             camera.view_proj,
             reproject * camera.view_proj,
+            camera.world_warp,
         );
         let object_motion = motion.draw(device, encoder, &camera.depth);
         gpu.flow

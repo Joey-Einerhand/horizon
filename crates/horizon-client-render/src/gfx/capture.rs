@@ -515,6 +515,8 @@ impl Scene {
             shadow_cache: false,
             distance: f.distance,
             detail_distance: f.detail_distance,
+            // A capture replays the frame flat: its inputs keep no warp.
+            world_warp: None,
             depth_far: f.depth_far,
             underwater: f.underwater,
             water_plane: f.water_plane,

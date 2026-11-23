@@ -9,6 +9,9 @@ struct Params {
     jittered: mat4x4<f32>,
     current: mat4x4<f32>,
     previous: mat4x4<f32>,
+    // The world warp (`Globals.world_warp`): moving things are drawn bent, so their motion is
+    // measured bent too, with this frame's warp for both positions.
+    world_warp: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -32,14 +35,23 @@ const TRANSLUCENT: u32 = 1u;
 // Nothing to match last frame: drawn as w = 1 only.
 const NEW: u32 = 2u;
 
+// Motion is measured where things are drawn: the world warp's bend (gfx/world_warp.rs; terrain.wgsl's `world_warp_point`).
+// x 0 is no warp.
+fn motion_warp(p: vec3<f32>, w: vec4<f32>) -> vec3<f32> {
+    if w.x == 0.0 { return p; }
+    let a = p.x / w.y;
+    let s = w.z - p.y;
+    return vec3(s * sin(a), w.z - s * cos(a), p.z);
+}
 @vertex fn vs_motion(@location(0) position: vec3<f32>, @location(1) previous: vec3<f32>,
     @location(2) uv: vec2<f32>, @location(3) flags: u32) -> Out {
     var out: Out;
     out.uv = uv;
     out.flags = flags;
-    out.clip = params.jittered * vec4(position, 1.0);
-    out.current = params.current * vec4(position, 1.0);
-    out.previous = params.previous * vec4(previous, 1.0);
+    let now = motion_warp(position, params.world_warp);
+    out.clip = params.jittered * vec4(now, 1.0);
+    out.current = params.current * vec4(now, 1.0);
+    out.previous = params.previous * vec4(motion_warp(previous, params.world_warp), 1.0);
     return out;
 }
 

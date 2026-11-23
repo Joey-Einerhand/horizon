@@ -46,8 +46,21 @@ struct Globals {
     // mirrored (its screen runs right to left), else 1; y the clip-space depth its clip plane's
     // entities come forward (`fs_entity_clipped`), 0 without one; z 1 with a clip plane.
     world_view: vec4<f32>,
+    // The world warp (gfx/world_warp.rs): x 1 with one, y its radius, z the eye's radius.
+    world_warp: vec4<f32>,
 }
 @group(0) @binding(0) var<uniform> globals: Globals;
+// The world warp (gfx/world_warp.rs, `Globals.world_warp`): the bend a curved world, such as a
+// ringworld mod's, gives every camera-relative world position before the projection. A block
+// `p.x` blocks along X turns `p.x / y` radians about an axis `z` blocks above the camera. x 0
+// is no warp: the position comes back as it is.
+fn world_warp_point(p: vec3<f32>) -> vec3<f32> {
+    let w = globals.world_warp;
+    if w.x == 0.0 { return p; }
+    let a = p.x / w.y;
+    let s = w.z - p.y;
+    return vec3(s * sin(a), w.z - s * cos(a), p.z);
+}
 @group(0) @binding(1) var sprites: texture_2d_array<f32>;
 @group(0) @binding(2) var sprite_sampler: sampler;
 @group(0) @binding(3) var lightmap: texture_2d<f32>;
@@ -675,7 +688,7 @@ fn terrain_vertex(position: vec3<f32>, uv: vec2<f32>, layer: u32, color: vec4<f3
     light: vec2<u32>, origin: vec3<f32>, w: f32) -> TerrainOut {
     let pos = position + origin;
     var out: TerrainOut;
-    out.clip = fade_depth(globals.view_proj * vec4(pos, 1.0), w);
+    out.clip = fade_depth(globals.view_proj * vec4(world_warp_point(pos), 1.0), w);
     out.local = position;
     out.uv = uv;
     out.layer = layer;
@@ -875,7 +888,7 @@ struct NativeFluidOut {
     if globals.colored_count.x > 0u {
         lit = vec4(min(lit.rgb + color.rgb * native_colored_light(position), vec3(1.0)), lit.a);
     }
-    return NativeFluidOut(globals.view_proj * vec4(position, 1.0), uv, lit, u32(sprite.x),
+    return NativeFluidOut(globals.view_proj * vec4(world_warp_point(position), 1.0), uv, lit, u32(sprite.x),
         length(position), max(length(position.xz), abs(position.y)));
 }
 @fragment fn fs_native_fluid(in: NativeFluidOut) -> @location(0) vec4<f32> {
@@ -906,7 +919,7 @@ struct NativeModelOut {
     if globals.colored_count.x > 0u {
         lit = vec4(min(lit.rgb + color.rgb * native_colored_light(position), vec3(1.0)), lit.a);
     }
-    return NativeModelOut(globals.view_proj * vec4(position, 1.0), uv, lit, layer >> 16u,
+    return NativeModelOut(globals.view_proj * vec4(world_warp_point(position), 1.0), uv, lit, layer >> 16u,
         length(position), max(length(position.xz), abs(position.y)),
         vec3(normal_xy, bitcast<f32>(normal_z)));
 }
@@ -1100,8 +1113,10 @@ fn outline_clip(vertex: u32, start: vec3<f32>, end: vec3<f32>, width: f32) -> ve
     let position = select(start, end, vertex >= 2u);
     let normal = normalize(end - start);
     let view_shrink = 1.0 - 1.0 / 256.0;
-    let line_start = globals.view_proj * vec4((position * globals.outline_params.w) * view_shrink, 1.0);
-    let line_end = globals.view_proj * vec4(((position + normal) * globals.outline_params.w) * view_shrink, 1.0);
+    let line_start = globals.view_proj
+        * vec4(world_warp_point((position * globals.outline_params.w) * view_shrink), 1.0);
+    let line_end = globals.view_proj
+        * vec4(world_warp_point(((position + normal) * globals.outline_params.w) * view_shrink), 1.0);
     let ndc1 = line_start.xyz / line_start.w;
     let ndc2 = line_end.xyz / line_end.w;
     let screen = globals.outline_params.xy;
@@ -1145,8 +1160,8 @@ struct DebugLineOut {
     @location(2) argb: vec4<f32>, @location(3) width: f32) -> DebugLineOut {
     let position = select(start, end, vertex >= 2u);
     let view_shrink = 1.0 - 1.0 / 256.0;
-    let line_start = globals.view_proj * vec4(position * view_shrink, 1.0);
-    let line_end = globals.view_proj * vec4((position + (end - start)) * view_shrink, 1.0);
+    let line_start = globals.view_proj * vec4(world_warp_point(position * view_shrink), 1.0);
+    let line_end = globals.view_proj * vec4(world_warp_point((position + (end - start)) * view_shrink), 1.0);
     let ndc1 = line_start.xyz / line_start.w;
     let ndc2 = line_end.xyz / line_end.w;
     let screen = globals.outline_params.xy;

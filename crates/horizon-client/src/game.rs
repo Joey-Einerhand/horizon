@@ -8010,6 +8010,13 @@ impl Game<'_> {
         })
     }
 
+    /// How this frame bends the world it draws (`gfx::WorldWarp`), seen from the camera at
+    /// `camera`: never, in vanilla. A mod whose world is curved, such as a ringworld, replaces
+    /// this with a `[[native.mixin]]`; culling and every world shader follow its answer.
+    fn frame_world_warp(&self, camera: glam::DVec3) -> Option<horizon_client::gfx::WorldWarp> {
+        let _ = camera;
+        None
+    }
     /// Build the complete frame before handing its borrowed geometry and lighting to
     /// the consumer. Tests use the same boundary as GPU submission.
     fn render_with(
@@ -8772,6 +8779,11 @@ impl Game<'_> {
             shadow_cache: self.settings.horizon.shadow_cache,
             distance,
             detail_distance: (self.streaming.radius * 16) as f32,
+            world_warp: if title {
+                None
+            } else {
+                self.frame_world_warp(camera)
+            },
             depth_far,
             underwater,
             water_plane: if title

@@ -51,10 +51,13 @@ impl Batch<'_> {
 struct Globals {
     view_proj: [[f32; 4]; 4],
     viewport: [f32; 4],
+    world_warp: [f32; 4],
 }
 
 /// The pipelines and buffers that draw a [`Batch`].
 pub struct WorldPrimitives {
+    /// The world pass's warp (`WorldWarp::uniform`), which primitives bend with.
+    world_warp: [f32; 4],
     /// Depth tested, then seen through walls.
     quad_pipelines: [wgpu::RenderPipeline; 2],
     line_pipelines: [wgpu::RenderPipeline; 2],
@@ -87,6 +90,10 @@ struct AtlasGroup {
 pub type Upload<'u> = &'u mut dyn FnMut(&wgpu::Buffer, &[u8]);
 
 impl WorldPrimitives {
+    /// Bend what the next `prepare` uploads by this warp (`WorldWarp::uniform`; zero is none).
+    pub fn set_world_warp(&mut self, warp: [f32; 4]) {
+        self.world_warp = warp;
+    }
     /// Pipelines drawing into `color_format` over a reversed Depth32Float depth, decoding their
     /// colours where the frame holds linear light (`linear`).
     pub fn new(device: &wgpu::Device, (color_format, linear): (wgpu::TextureFormat, bool)) -> Self {
@@ -228,6 +235,7 @@ impl WorldPrimitives {
             })
         };
         Self {
+            world_warp: [0.0; 4],
             quad_pipelines,
             line_pipelines,
             globals: buffer(
@@ -347,6 +355,7 @@ impl WorldPrimitives {
         let globals = Globals {
             view_proj: view_proj.to_cols_array_2d(),
             viewport: [viewport[0] as f32, viewport[1] as f32, 0.0, 0.0],
+            world_warp: self.world_warp,
         };
         upload(&self.globals, bytemuck::bytes_of(&globals));
         if self.group.as_ref().is_none_or(|g| g.view != *atlas) {

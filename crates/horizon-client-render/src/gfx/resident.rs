@@ -838,6 +838,7 @@ mod tests {
                 let view = crate::camera::view_matrix(yaw, pitch);
                 let frustum = Frustum {
                     planes: super::super::frustum(projection * view),
+                    warp: None,
                 };
                 let mut fast = Vec::new();
                 // Columns past the distance kept for distant terrain.
@@ -898,6 +899,7 @@ mod tests {
         let projection = super::super::world_projection(70.0, 16.0 / 9.0, 512.0);
         let frustum = Frustum {
             planes: super::super::frustum(projection * crate::camera::view_matrix(0.0, 5.0)),
+            warp: None,
         };
         let inside = r
             .column_headers
@@ -1118,6 +1120,7 @@ mod tests {
         ] {
             let view = Frustum {
                 planes: super::super::frustum(projection * crate::camera::view_matrix(yaw, pitch)),
+                warp: None,
             };
             inside += r
                 .column_headers
@@ -1175,6 +1178,7 @@ mod tests {
         let projection = super::super::world_projection(70.0, 16.0 / 9.0, 1024.0);
         let frustum = Frustum {
             planes: super::super::frustum(projection * crate::camera::view_matrix(30.0, 35.0)),
+            warp: None,
         };
         let (mut old, mut new) = (Duration::MAX, Duration::MAX);
         let (mut list, mut keys) = (Vec::new(), Vec::new());
@@ -1219,6 +1223,7 @@ mod tests {
         let view = crate::camera::view_matrix(0.0, -60.0);
         let frustum = Frustum {
             planes: super::super::frustum(projection * view),
+            warp: None,
         };
 
         // Tight bounds culls the section whose geometry is entirely outside the frustum
@@ -1283,6 +1288,7 @@ mod tests {
             let view = crate::camera::view_matrix(yaw, pitch);
             let frustum = Frustum {
                 planes: super::super::frustum(projection * view),
+                warp: None,
             };
 
             let mut out_fallback = Vec::new();

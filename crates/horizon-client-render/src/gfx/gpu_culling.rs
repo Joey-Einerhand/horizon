@@ -1893,7 +1893,7 @@ mod tests {
     fn through(m: Mat4) -> (Frustum, Vec3) {
         let eye = super::super::view::projection_center(m).expect("a perspective");
         let planes = super::super::frustum(m);
-        (Frustum { planes }, eye)
+        (Frustum { planes, warp: None }, eye)
     }
 
     /// A view as `draw_frame` builds one, looking `yaw` and `pitch` out to
@@ -3098,6 +3098,7 @@ mod tests {
                 let plane = plane / plane.truncate().length();
                 let frustum = Frustum {
                     planes: [plane, Vec4::W, Vec4::W, Vec4::W, Vec4::W, Vec4::W],
+                    warp: None,
                 };
                 let walk_keeps = |t: f64| {
                     let camera = base + normal * t;
@@ -3936,6 +3937,7 @@ struct Quad {
         // those of their quads that can face its eye.
         let all = Frustum {
             planes: [Vec4::W; 6],
+            warp: None,
         };
         let lens = super::super::world_projection(70.0, 16.0 / 9.0, 512.0);
         let (ahead, eye) = through(lens * crate::camera::view_matrix(0.0, 0.0));

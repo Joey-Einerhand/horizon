@@ -400,6 +400,7 @@ fn frame(hud: &HudBatch) -> Frame<'_> {
         sky: crate::environment::Sky::default(),
         distance: 12.0,
         detail_distance: 12.0,
+        world_warp: None,
         depth_far: 1000.0,
         underwater: false,
         cave_culling: false,

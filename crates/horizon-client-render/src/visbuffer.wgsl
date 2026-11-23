@@ -84,7 +84,7 @@ struct VisIdOut {
         return out;
     }
     let position = bitcast<vec3<f32>>(s.c.p);
-    out.clip = fade_depth(globals.view_proj * vec4(position + origin.xyz, 1.0), origin.w);
+    out.clip = fade_depth(globals.view_proj * vec4(world_warp_point(position + origin.xyz), 1.0), origin.w);
     out.id = vis_id(page, s);
     return out;
 }
@@ -118,7 +118,7 @@ struct VisCutoutOut {
     let uv = vec2(s.c.r.x & 0xffffu, s.c.r.x >> 16u);
     let light = vec2((s.c.r.y >> 16u) & 0xffu, s.c.r.y >> 24u);
     let pos = position + origin.xyz;
-    out.clip = fade_depth(globals.view_proj * vec4(pos, 1.0), origin.w);
+    out.clip = fade_depth(globals.view_proj * vec4(world_warp_point(pos), 1.0), origin.w);
     out.id = vis_id(page, s);
     out.uv = terrain_uv(uv, origin.w);
     out.layer = layer;
@@ -385,9 +385,9 @@ fn vis_corner(pos: vec3<f32>, rest: vec3<u32>, uv_step: f32) -> VisCorner {
     let pos1 = bitcast<vec3<f32>>(p1) + origin.xyz;
     let pos2 = bitcast<vec3<f32>>(p2) + origin.xyz;
     let pos3 = bitcast<vec3<f32>>(p3) + origin.xyz;
-    let c0 = (globals.view_proj * vec4(pos0, 1.0)).xyw;
-    let c1 = (globals.view_proj * vec4(pos1, 1.0)).xyw;
-    let c2 = (globals.view_proj * vec4(pos2, 1.0)).xyw;
+    let c0 = (globals.view_proj * vec4(world_warp_point(pos0), 1.0)).xyw;
+    let c1 = (globals.view_proj * vec4(world_warp_point(pos1), 1.0)).xyw;
+    let c2 = (globals.view_proj * vec4(world_warp_point(pos2), 1.0)).xyw;
     // The quad's triangles are 0 1 2 and 0 2 3 (`Renderer::quad_indices`, flatten.wgsl),
     // either side of the diagonal 0 2. Corner 1's weight in 0 1 2 is `vis_bary`'s row
     // cross(c2, c0) over the sum of the rows, whose sign is that of the triangle's determinant
@@ -407,7 +407,7 @@ fn vis_corner(pos: vec3<f32>, rest: vec3<u32>, uv_step: f32) -> VisCorner {
     var r_b = r2;
     if second {
         c_a = c2;
-        c_b = (globals.view_proj * vec4(pos3, 1.0)).xyw;
+        c_b = (globals.view_proj * vec4(world_warp_point(pos3), 1.0)).xyw;
         pos_a = pos2;
         r_a = r2;
         pos_b = pos3;

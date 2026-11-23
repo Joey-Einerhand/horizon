@@ -436,6 +436,7 @@ fn fixture_frame(hud: &HudBatch) -> Frame<'_> {
         shadow_cache: false,
         distance: 12.0,
         detail_distance: 12.0,
+        world_warp: None,
         depth_far: 1000.0,
         underwater: false,
         water_plane: None,

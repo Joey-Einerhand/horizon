@@ -16,6 +16,7 @@ struct Params {
     jittered: [[f32; 4]; 4],
     current: [[f32; 4]; 4],
     previous: [[f32; 4]; 4],
+    world_warp: [f32; 4],
 }
 
 /// A vertex this frame and where it was last frame, both relative to this frame's camera.
@@ -211,6 +212,7 @@ impl ObjectMotion {
         jittered: Mat4,
         current: Mat4,
         previous: Mat4,
+        world_warp: [f32; 4],
     ) {
         if self.target.as_ref().is_none_or(|t| t.0 != size) {
             let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -242,6 +244,7 @@ impl ObjectMotion {
             jittered: jittered.to_cols_array_2d(),
             current: current.to_cols_array_2d(),
             previous: previous.to_cols_array_2d(),
+            world_warp,
         };
         queue.write_buffer(&self.params, 0, bytemuck::bytes_of(&params));
     }
@@ -515,7 +518,9 @@ mod tests {
             entities.extend(square(4.0, 0));
             entities.extend(square(6.0, SHADOW_OVERLAY));
             motion.track(&entities, &[(0, 7), (4, 9), (8, 0), (12, 0)], DVec3::ZERO);
-            motion.prepare(&device, &queue, size, projection, projection, projection);
+            motion.prepare(
+                &device, &queue, size, projection, projection, projection, [0.0; 4],
+            );
             let mut encoder = device.create_command_encoder(&Default::default());
             let view = motion.draw(&device, &mut encoder, &depth);
             queue.submit([encoder.finish()]);

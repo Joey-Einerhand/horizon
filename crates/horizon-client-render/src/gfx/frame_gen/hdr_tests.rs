@@ -141,6 +141,7 @@ impl Run {
                 near: 0.05,
                 far: 512.0,
                 fov_y: 1.2,
+                world_warp: [0.0; 4],
             },
             config: wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,

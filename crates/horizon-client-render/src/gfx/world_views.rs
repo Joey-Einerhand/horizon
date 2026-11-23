@@ -213,6 +213,8 @@ impl Renderer {
                 outline_params: super::outline_params(view.size[0], view.size[1]),
                 view_origin: [camera.offset.x, camera.offset.y, camera.offset.z, 0.0],
                 world_view: camera.world_view,
+                // The warp is the screen camera's: a mod's own camera sees the world flat.
+                world_warp: [0.0; 4],
                 ..lists.globals
             };
             self.uploads

@@ -8,6 +8,8 @@ struct Border {
     color: vec4<f32>,
     // xyz: model offset, w: texture translation (u and v)
     offset: vec4<f32>,
+    // The world warp (`Globals.world_warp`): the wall bends with the world.
+    warp: vec4<f32>,
 }
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(0) @binding(1) var forcefield: texture_2d<f32>;
@@ -17,9 +19,17 @@ struct Out {
     @builtin(position) clip: vec4<f32>,
     @location(0) uv: vec2<f32>,
 }
+// The border wall bends as the world does: the world warp's bend (gfx/world_warp.rs; terrain.wgsl's `world_warp_point`).
+// x 0 is no warp.
+fn border_warp(p: vec3<f32>, w: vec4<f32>) -> vec3<f32> {
+    if w.x == 0.0 { return p; }
+    let a = p.x / w.y;
+    let s = w.z - p.y;
+    return vec3(s * sin(a), w.z - s * cos(a), p.z);
+}
 @vertex fn vs_border(@location(0) position: vec3<f32>, @location(1) uv: vec2<f32>) -> Out {
     var out: Out;
-    out.clip = globals.view_proj * vec4(position + border.offset.xyz, 1.0);
+    out.clip = globals.view_proj * vec4(border_warp(position + border.offset.xyz, border.warp), 1.0);
     out.uv = uv + vec2(border.offset.w);
     return out;
 }

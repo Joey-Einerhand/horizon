@@ -628,6 +628,8 @@ mod world_handover;
 mod world_post;
 pub mod world_primitives;
 mod world_views;
+pub mod world_warp;
+pub use world_warp::WorldWarp;
 
 /// A section's instance: its camera-relative origin and, in `w`, the step of
 /// its fixed-point UVs (`terrain.wgsl`'s `terrain_uv`).
@@ -796,6 +798,9 @@ struct Globals {
     /// A mod's world view's own (`world_views::ViewCamera`), zero outside one: x -1 when it is
     /// mirrored, else 1; y the clip-space depth its entities come forward; z 1 with a clip plane.
     world_view: [f32; 4],
+    /// The world warp (`world_warp::WorldWarp::uniform`): x 1 with one, y its radius, z the
+    /// eye's radius; zero draws the world flat.
+    world_warp: [f32; 4],
 }
 #[repr(C)]
 #[derive(Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
@@ -1221,6 +1226,9 @@ pub struct Frame<'a> {
     pub distance: f32,
     /// Full-detail terrain distance in blocks; distant LODs bypass the cave graph.
     pub detail_distance: f32,
+    /// How the world shaders bend the world before projecting it (`world_warp`); `None`
+    /// draws it flat. Culling bends what it tests the same way.
+    pub world_warp: Option<WorldWarp>,
     /// `Camera.depthFar`: the far plane (`crate::camera::depth_far`).
     pub depth_far: f32,
     pub underwater: bool,
@@ -1383,6 +1391,8 @@ pub struct BorderDraw {
 struct BorderUniform {
     color: [f32; 4],
     offset: [f32; 4],
+    /// `WorldWarp::uniform` of the frame's warp.
+    warp: [f32; 4],
 }
 /// A frame to save as a PNG: F2's screenshot, an agent's `game_screenshot`,
 /// or the icon the Select World list shows.
@@ -1543,6 +1553,8 @@ impl AnimatedTickCache {
 }
 
 pub struct Renderer {
+    /// The last frame's world warp (`Frame::world_warp`), for culls made outside its draw.
+    world_warp: Option<WorldWarp>,
     msaa: msaa::Msaa,
     instance: wgpu::Instance,
     adapter: wgpu::Adapter,
@@ -4738,6 +4750,7 @@ impl Renderer {
         let views = world_views::Kept::new(flipped, translucent_flipped, entity_pipeline_with);
         bound.kept = true;
         Ok(Self {
+            world_warp: None,
             msaa,
             display: None,
             reading: display,
@@ -7568,7 +7581,7 @@ impl Renderer {
     ) -> JoinedFrusta {
         let views = ViewSet::single(self.screen_view(fov_degrees, yaw, pitch, depth_far));
         let planes = frustum(views.cull().view_proj(bob));
-        self.ask_world_views(camera, depth_far, Frustum { planes })
+        self.ask_world_views(camera, depth_far, Frustum { planes, warp: None })
     }
     /// A conservative view for geometry built before TAA chooses this frame's
     /// jitter. Cover a whole rendered pixel on each side, at the configured
@@ -7586,7 +7599,9 @@ impl Renderer {
         let size = self
             .world_post
             .taa_render_size([self.config.width, self.config.height]);
-        self.asked_world_views(taa_frustum(views.cull().view_proj(bob), size))
+        self.asked_world_views(
+            taa_frustum(views.cull().view_proj(bob), size).warped(self.world_warp),
+        )
     }
     fn screen_view(&self, fov_degrees: f32, yaw: f32, pitch: f32, far: f32) -> View {
         let aspect = self.config.width as f32 / self.config.height.max(1) as f32;
@@ -7736,6 +7751,7 @@ impl Renderer {
     }
     #[horizon_mod_api_macros::replaceable]
     pub fn render(&mut self, frame: &Frame) -> Result<bool> {
+        self.world_warp = frame.world_warp.filter(WorldWarp::is_valid);
         // A lost device cannot accept uploads either. Leave recovery to the
         // owner instead of submitting atlas patches to the invalid device.
         if self.device_lost() {
@@ -8370,6 +8386,7 @@ impl Renderer {
             hdr_settings,
             view_origin: [0.0; 4],
             world_view: [0.0; 4],
+            world_warp: WorldWarp::uniform(frame.world_warp),
         };
         self.uploads
             .buffer(&mut encoder, &self.globals, 0, bytemuck::bytes_of(&globals));
@@ -8466,7 +8483,9 @@ impl Renderer {
         let cull_proj = views.cull().view_proj(pose);
         let view = Frustum {
             planes: frustum(cull_proj),
-        };
+            warp: None,
+        }
+        .warped(frame.world_warp);
         let camera = frame.camera;
         let camera_section = camera_section(camera, self.layout.min_y());
         // The water mirror draws the same lists: they take in what its camera sees too
@@ -8479,6 +8498,7 @@ impl Renderer {
                 cull_proj,
                 plane - frame.camera.y as f32,
             )),
+            warp: None,
         });
         // Solid quads facing away from the eye are left out: the bob moves
         // the eye off `camera`, so it is found from the projection. With the mirror, those
@@ -8546,7 +8566,10 @@ impl Renderer {
         // still switch GPU culling off.
         let radius = (frame.detail_distance / 16.0) as i32;
         let displaced = self.executor.is_some_and(|c| c.displacement);
+        // A warped world is culled on the CPU, whose tests bend each box (`Frustum::warped`);
+        // GPU culling's boxes stay flat.
         let mut gpu_frame = self.gpu_culling.is_some()
+            && frame.world_warp.is_none()
             && !msaa_on
             && !frame.title
             && !pack_terrain
@@ -8668,6 +8691,7 @@ impl Renderer {
                     let all = ShadowCull {
                         light: Frustum {
                             planes: [glam::Vec4::W; 6],
+                            warp: None,
                         },
                         casters: None,
                         reach: v.distance,
@@ -8884,7 +8908,9 @@ impl Renderer {
             .cull
             .as_mut()
             .filter(|c| {
+                // Its test boxes are drawn flat: a warped world would hide what it draws bent.
                 self.cull_on
+                    && frame.world_warp.is_none()
                     && !msaa_on
                     && !frame.title
                     && !pack_terrain
@@ -9361,6 +9387,8 @@ impl Renderer {
         // line widths in the frame's pixels as the gizmo lines'.
         let world_primitives = !frame.title && {
             let (uploads, encoder) = (&mut self.uploads, &mut encoder);
+            self.world_primitives
+                .set_world_warp(WorldWarp::uniform(frame.world_warp));
             self.world_primitives.prepare(
                 &self.device,
                 &mut |buffer, bytes| uploads.buffer(encoder, buffer, 0, bytes),
@@ -10024,6 +10052,7 @@ impl Renderer {
                     t.model_offset[2],
                     t.texture_offset,
                 ],
+                warp: WorldWarp::uniform(frame.world_warp),
             };
             self.uploads.buffer(
                 &mut encoder,
@@ -12137,6 +12166,7 @@ impl Renderer {
                 near: NEAR_PLANE,
                 far: frame.depth_far,
                 fov_y: frame.fov_degrees.to_radians(),
+                world_warp: WorldWarp::uniform(frame.world_warp),
             };
             let overlay = Overlay {
                 hand_quads: hand_quads * u32::from(!pack_draws_hand),
@@ -13013,7 +13043,7 @@ pub use view_frustum::Frustum;
 
 #[cfg(feature = "test-support")]
 pub fn test_frustum(planes: [Vec4; 6]) -> JoinedFrusta {
-    JoinedFrusta::new(Frustum { planes }, [])
+    JoinedFrusta::new(Frustum { planes, warp: None }, [])
 }
 /// Vanilla's `Projection`: reversed depth (near maps to 1, far to 0, tests
 /// are GREATER_THAN_OR_EQUAL), which keeps far faces a hair apart, like
@@ -13238,6 +13268,7 @@ mod tests {
                 let guarded = taa_frustum(matrix, size);
                 let ordinary = Frustum {
                     planes: frustum(matrix),
+                    warp: None,
                 };
                 for x in [-1.0, 1.0] {
                     for y in [-1.0, 1.0] {
@@ -13284,6 +13315,7 @@ mod tests {
             let matrix = world_projection(70.0, 16.0 / 9.0, 512.0) * pose;
             let view = Frustum {
                 planes: frustum(matrix),
+                warp: None,
             };
             for size in [[1, 1], [320, 180], [1280, 720], [3840, 2160]] {
                 for (x, y) in [(-1.0, 1.0), (1.0, -1.0)] {
@@ -15341,6 +15373,7 @@ mod shadow_caster_tests {
         let cull = ShadowCull {
             light: Frustum {
                 planes: [Vec4::W; 6],
+                warp: None,
             },
             casters: Some(shadow_casters(camera, light)),
             reach: None,
@@ -15388,6 +15421,7 @@ mod shadow_caster_tests {
             let cull = ShadowCull {
                 light: Frustum {
                     planes: [Vec4::W; 6],
+                    warp: None,
                 },
                 casters: Some(shadow_casters(camera, Vec3::Y)),
                 reach: None,
@@ -15423,6 +15457,7 @@ mod shadow_caster_tests {
             let cull = ShadowCull {
                 light: Frustum {
                     planes: [Vec4::W; 6],
+                    warp: None,
                 },
                 casters: None,
                 reach: Some(reach),
@@ -15452,6 +15487,7 @@ mod shadow_caster_tests {
             * Mat4::look_to_rh(Vec3::ZERO, Vec3::Y, Vec3::Z);
         let view = Frustum {
             planes: frustum(up),
+            warp: None,
         };
         // The section east of the camera's, y 0..16, with ground only in its lowest 2 blocks.
         let mut sections = resident::Resident::<()>::default();
@@ -15464,6 +15500,7 @@ mod shadow_caster_tests {
         };
         let all = Frustum {
             planes: [Vec4::W; 6],
+            warp: None,
         };
         let shadow = ShadowCull {
             light: all,
@@ -15539,6 +15576,7 @@ mod shadow_caster_tests {
             let cull = ShadowCull {
                 light: Frustum {
                     planes: [Vec4::W; 6],
+                    warp: None,
                 },
                 casters: Some(shadow_casters(camera, Vec3::Y)),
                 reach: None,

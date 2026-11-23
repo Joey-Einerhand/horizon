@@ -6,6 +6,8 @@ struct Globals {
     view_proj: mat4x4<f32>,
     // The frame's size in pixels (line widths are in its pixels).
     viewport: vec4<f32>,
+    // The world warp (`Globals.world_warp` of the world pass).
+    world_warp: vec4<f32>,
 }
 @group(0) @binding(0) var<uniform> globals: Globals;
 @group(0) @binding(1) var atlas: texture_2d<f32>;
@@ -20,10 +22,18 @@ struct QuadOut {
 }
 
 // `Vertex` (mesher.rs): position, atlas UV, layer, RGBA colour, light.
+// Primitives bend as the world they mark does: the world warp's bend (gfx/world_warp.rs; terrain.wgsl's `world_warp_point`).
+// x 0 is no warp.
+fn primitive_warp(p: vec3<f32>, w: vec4<f32>) -> vec3<f32> {
+    if w.x == 0.0 { return p; }
+    let a = p.x / w.y;
+    let s = w.z - p.y;
+    return vec3(s * sin(a), w.z - s * cos(a), p.z);
+}
 @vertex fn vs_quad(@location(0) pos: vec3<f32>, @location(1) uv: vec2<f32>,
     @location(2) layer: u32, @location(3) color: vec4<f32>, @location(4) light: u32) -> QuadOut {
     var out: QuadOut;
-    out.clip = globals.view_proj * vec4(pos, 1.0);
+    out.clip = globals.view_proj * vec4(primitive_warp(pos, globals.world_warp), 1.0);
     out.uv = uv;
     out.color = color;
     // Layer 6 is a beacon beam's: its v repeats inside the sprite, whose range rides in the
@@ -59,8 +69,8 @@ struct LineOut {
     out.color = argb.zyxw;
 
     let view_shrink = 1.0 - 1.0 / 256.0;
-    let p0 = globals.view_proj * vec4(start * view_shrink, 1.0);
-    let p1 = globals.view_proj * vec4(end * view_shrink, 1.0);
+    let p0 = globals.view_proj * vec4(primitive_warp(start * view_shrink, globals.world_warp), 1.0);
+    let p1 = globals.view_proj * vec4(primitive_warp(end * view_shrink, globals.world_warp), 1.0);
 
     // An end behind the camera has no screen position: cut the line where it reaches the
     // near plane (in clip space, so the cut is exact), and drop it when both ends are behind.

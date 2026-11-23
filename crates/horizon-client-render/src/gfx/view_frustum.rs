@@ -1,13 +1,30 @@
 //! The camera's view frustum, as camera-relative clip planes.
 
+use super::world_warp::WorldWarp;
 use glam::{Vec3, Vec4};
 
 /// Camera-relative clip planes (`Frustum`).
 #[derive(Clone, Copy, Debug)]
 pub struct Frustum {
     pub(super) planes: [Vec4; 6],
+    /// The world warp the world is drawn with (`world_warp`): each test bends its box or point
+    /// first, so what is culled matches what the shaders draw.
+    pub(super) warp: Option<WorldWarp>,
 }
 impl Frustum {
+    /// The same planes, testing what `warp` bends.
+    pub fn warped(self, warp: Option<WorldWarp>) -> Self {
+        Self {
+            warp: warp.filter(WorldWarp::is_valid),
+            ..self
+        }
+    }
+    fn bent(&self, min: Vec3, max: Vec3) -> (Vec3, Vec3) {
+        match &self.warp {
+            Some(w) => w.envelope(min, max),
+            None => (min, max),
+        }
+    }
     /// The camera-relative box `min..max` as six planes, each facing in.
     pub fn boxed(min: Vec3, max: Vec3) -> Self {
         let axis = |i: usize| Vec3::AXES[i].extend(0.0);
@@ -15,10 +32,11 @@ impl Frustum {
             0 => axis(i / 2) + Vec4::W * -min[i / 2],
             _ => -axis(i / 2) + Vec4::W * max[i / 2],
         });
-        Self { planes }
+        Self { planes, warp: None }
     }
     /// Whether the camera-relative box `min..max` is at least partly inside.
     pub fn intersects(&self, min: Vec3, max: Vec3) -> bool {
+        let (min, max) = self.bent(min, max);
         !self.planes.iter().any(|p| {
             let sign = p.truncate().cmpge(Vec3::ZERO);
             let v = Vec3::select(sign, max, min);
@@ -32,6 +50,10 @@ impl Frustum {
         if !center.is_finite() || !radius.is_finite() || radius < 0.0 {
             return true;
         }
+        if let Some(w) = &self.warp {
+            let (min, max) = w.envelope(center - radius, center + radius);
+            return self.warped(None).intersects(min, max);
+        }
         !self
             .planes
             .iter()
@@ -43,6 +65,7 @@ impl Frustum {
         if !min.is_finite() || !max.is_finite() || !min.cmple(max).all() {
             return true;
         }
+        let (min, max) = self.bent(min, max);
         !self.planes[4..].iter().any(|p| {
             let sign = p.truncate().cmpge(Vec3::ZERO);
             let v = Vec3::select(sign, max, min);
@@ -54,6 +77,7 @@ impl Frustum {
     /// grows from this box's nearest corner to the inner box's farthest, and
     /// rounding keeps that order.
     pub fn contains(&self, min: Vec3, max: Vec3) -> bool {
+        let (min, max) = self.bent(min, max);
         self.planes.iter().all(|p| {
             let sign = p.truncate().cmpge(Vec3::ZERO);
             let v = Vec3::select(sign, min, max);
@@ -67,6 +91,7 @@ impl Frustum {
         if !point.is_finite() {
             return true;
         }
+        let point = self.warp.map_or(point, |w| w.point(point));
         self.planes
             .iter()
             .all(|plane| plane.truncate().dot(point) + plane.w >= 0.0)
@@ -94,13 +119,14 @@ impl Frustum {
         for plane in &mut planes {
             plane.w += blocks * plane.truncate().dot(axis);
         }
-        Frustum { planes }
+        Frustum { planes, ..*self }
     }
     /// The frustum of a camera-relative `view_proj`, for tests outside this module.
     #[cfg(test)]
     pub(crate) fn from_view_projection(view_proj: glam::Mat4) -> Frustum {
         Frustum {
             planes: super::frustum(view_proj),
+            warp: None,
         }
     }
 }

@@ -129,6 +129,7 @@ fn view_sections<T>(
 ) {
     let own = Frustum {
         planes: frustum(ViewCamera::new(view, view.camera, far).own_view_proj),
+        warp: None,
     };
     sections.visible(view.camera, radius, &own, |_| true, |_, _| false, out);
     for v in out.iter_mut() {
@@ -167,6 +168,7 @@ impl Renderer {
         sections.asked = true;
         let views = sections.views.views().iter().map(|v| Frustum {
             planes: super::frustum(ViewCamera::new(v, camera, far).view_proj),
+            warp: None,
         });
         let seen = JoinedFrusta::new(frustum, views);
         sections.seen = Some(seen);
