@@ -49,9 +49,29 @@ impl MaterialRuleLibrary {
         definitions: &BTreeMap<String, String>,
         conditions: &MaterialConditionRegistry,
         blocks: &BlockStateJsonCodec<'_>,
+        densities: DensityRegistry,
+        seed: i64,
+        legacy: bool,
+    ) -> Result<Self, DecodeError> {
+        Self::from_json_mapped(
+            definitions,
+            conditions,
+            blocks,
+            densities,
+            seed,
+            legacy,
+            None,
+        )
+    }
+    /// [`Self::from_json`] for a level whose noises read at `coordinate_map`'s columns.
+    pub fn from_json_mapped(
+        definitions: &BTreeMap<String, String>,
+        conditions: &MaterialConditionRegistry,
+        blocks: &BlockStateJsonCodec<'_>,
         mut densities: DensityRegistry,
         seed: i64,
         legacy: bool,
+        coordinate_map: Option<std::sync::Arc<dyn horizon_core::density::CoordinateMap>>,
     ) -> Result<Self, DecodeError> {
         if definitions.len() > 8192 {
             return Err(DecodeError::Field("material rule registry size"));
@@ -80,7 +100,8 @@ impl MaterialRuleLibrary {
         Ok(Self {
             definitions: loader.values,
             roots,
-            compiler: DensityCompiler::new_seeded(densities.into_graph(), seed, legacy),
+            compiler: DensityCompiler::new_seeded(densities.into_graph(), seed, legacy)
+                .with_coordinate_map(coordinate_map),
             compiled: BTreeMap::new(),
         })
     }

@@ -21,7 +21,7 @@ use super::{
         BiomeSourceCatalog, BiomeSourceDefinition, ResolvedBiomeSource, regions::RegionLayout,
     },
     biome_temperature::{BiomeTemperature, BiomeTemperatureSettings},
-    carver::{CarverCatalog, WorldCarver, generate_carving_mask},
+    carver::{CarverCatalog, WorldCarver, generate_carving_mask_seeded},
     carving::{CarvingBlocks, apply_carving_mask_shared},
     climate::{ClimateSampler, decode_parameter, quantize},
     decode_noise,
@@ -362,6 +362,8 @@ struct Pipeline<R: RandomSource> {
     surface: MaterialSurface<R::Positional>,
     noises: BTreeMap<String, Arc<dyn Noise>>,
     extensions: MaterialExtensions<R::Positional>,
+    /// The level's coordinate map (`coordinate_map_for`), for what reads chunks, not columns.
+    coordinate_map: Option<Arc<dyn horizon_core::density::CoordinateMap>>,
     picker: GlobalFluidPicker,
     zoom: BiomeZoom,
     biome_cache: BiomeCache,
@@ -431,6 +433,20 @@ impl ChunkWork {
     }
 }
 
+/// Where level `dimension`'s noises read each block column (`horizon_core::density::coordinate_map`):
+/// in place, in vanilla. A mod whose world wraps, such as a ringworld, replaces this with a
+/// `[[native.mixin]]` that answers its map for the Overworld, so terrain, climate, biomes,
+/// aquifers, far terrain and spawn finding join where its X wraps. Asked once each time a
+/// level's generator is built.
+#[horizon_mod_api_macros::replaceable]
+pub fn coordinate_map_for(
+    dimension: &str,
+    seed: i64,
+) -> Option<Arc<dyn horizon_core::density::CoordinateMap>> {
+    let _ = (dimension, seed);
+    None
+}
+
 type BiomeCache = Mutex<BiomeChunks>;
 type LatticeCache = Mutex<HashMap<(i32, i32), Arc<Vec<LatticeSamples>>>>;
 /// ~33 KB a chunk in To The Max; misses only resample.
@@ -454,12 +470,37 @@ where
     fn new(
         data: Arc<GeneratorData>,
         seed: i64,
+        random: R,
+        generator: &Value,
+        settings_json: &Value,
+        with_structures: bool,
+        level: Option<(i32, i32)>,
+        regions: Option<&RegionLayout>,
+    ) -> Result<Self, GeneratorError> {
+        Self::new_mapped(
+            data,
+            seed,
+            random,
+            generator,
+            settings_json,
+            with_structures,
+            level,
+            regions,
+            None,
+        )
+    }
+    /// [`Self::new`] for a level whose noises read at `coordinate_map`'s columns.
+    #[allow(clippy::too_many_arguments)]
+    fn new_mapped(
+        data: Arc<GeneratorData>,
+        seed: i64,
         mut random: R,
         generator: &Value,
         settings_json: &Value,
         with_structures: bool,
         level: Option<(i32, i32)>,
         regions: Option<&RegionLayout>,
+        coordinate_map: Option<std::sync::Arc<dyn horizon_core::density::CoordinateMap>>,
     ) -> Result<Self, GeneratorError> {
         let registry = data.registry;
         let root = random.fork_positional();
@@ -470,7 +511,8 @@ where
             aquifer,
             rule,
             spawn_target,
-        } = data.decode_noise_settings(settings_json, seed, level)?;
+        } =
+            data.decode_noise_settings_mapped(settings_json, seed, level, coordinate_map.clone())?;
         let preliminary = router.get(RouterField::ChunkSurfaceLevel).clone();
         let mut source_json = generator["biome_source"].to_string();
         let definition = data.source_catalog.decode(&source_json)?;
@@ -508,12 +550,20 @@ where
                 .cloned()
                 .ok_or_else(|| resource(format!("missing noise {name}")))
         };
+        // The surface's noises read block columns as they are, so a coordinate map wraps them
+        // whole; the extensions scale theirs first and map the column themselves.
+        let mapped = |noise: Arc<dyn Noise>| -> Arc<dyn Noise> {
+            match &coordinate_map {
+                Some(map) => Arc::new(super::mapped_noise::MappedNoise::new(noise, map.clone())),
+                None => noise,
+            }
+        };
         let surface = MaterialSurface::new(
             root.clone(),
             ClayBandBlocks::from_registry(registry).ok_or_else(|| resource("clay bands"))?,
-            noise("minecraft:clay_bands_offset")?,
-            noise("minecraft:surface")?,
-            noise("minecraft:surface_secondary")?,
+            mapped(noise("minecraft:clay_bands_offset")?),
+            mapped(noise("minecraft:surface")?),
+            mapped(noise("minecraft:surface_secondary")?),
         );
         let default = |name: &str| {
             registry
@@ -537,7 +587,13 @@ where
                 iceberg_roof: noise("minecraft:iceberg_pillar_roof")?,
             },
             settings.sea_level,
-        );
+        )
+        .with_coordinate_map(coordinate_map.clone());
+        // Surface rules' `noise_threshold` conditions read these at block columns too.
+        let noises: BTreeMap<String, Arc<dyn Noise>> = noises
+            .into_iter()
+            .map(|(name, noise)| (name, mapped(noise)))
+            .collect();
         let picker = GlobalFluidPicker::new(
             settings.sea_level,
             settings.default_fluid,
@@ -545,6 +601,7 @@ where
             default("minecraft:air")?,
         );
         let mut pipeline = Self {
+            coordinate_map,
             zoom: BiomeZoom::new(obfuscate_seed(seed)),
             data,
             seed,
@@ -1133,13 +1190,27 @@ where
         worker.timings.surface += lap(&mut clock);
         let carvers = &data.biome_carvers;
         let carves = stages.is_none_or(|stages| stages.carvers);
-        let mask = generate_carving_mask(self.seed, pos, generation, false, |origin| {
-            if !carves {
-                return Ok(&[][..]);
+        let seed_chunk = |origin: ChunkPos| match &self.coordinate_map {
+            Some(map) => {
+                let [x, z] = map.seed_chunk(origin.x, origin.z);
+                ChunkPos::new(x, z)
             }
-            self.carver_biome(worker, origin)
-                .map(|id| carvers[id.0 as usize].as_slice())
-        })
+            None => origin,
+        };
+        let mask = generate_carving_mask_seeded(
+            self.seed,
+            pos,
+            generation,
+            false,
+            |origin| {
+                if !carves {
+                    return Ok(&[][..]);
+                }
+                self.carver_biome(worker, origin)
+                    .map(|id| carvers[id.0 as usize].as_slice())
+            },
+            &seed_chunk,
+        )
         .map_err(stage("carvers"))?;
         worker.timings.carvers += lap(&mut clock);
         if !mask.is_empty() {
@@ -2816,7 +2887,16 @@ impl OverworldGenerator {
         if stem["generator"]["type"].as_str() != Some("minecraft:noise") {
             return Err(resource(format!("{dimension} is not a noise generator")));
         }
-        Self::from_stem(data, seed, &stem, with_structures, regions, None)
+        let coordinate_map = coordinate_map_for(dimension, seed);
+        Self::from_stem(
+            data,
+            seed,
+            &stem,
+            with_structures,
+            regions,
+            None,
+            coordinate_map,
+        )
     }
     /// The pipeline of level `stem` over its noise settings, with a mod's `terrain` in place of
     /// the noise when it has one.
@@ -2827,6 +2907,7 @@ impl OverworldGenerator {
         with_structures: bool,
         regions: Option<Arc<RegionLayout>>,
         terrain: Option<mod_terrain::ModTerrain>,
+        coordinate_map: Option<Arc<dyn horizon_core::density::CoordinateMap>>,
     ) -> Result<Self, GeneratorError> {
         let generator = &stem["generator"];
         // The level's build range: its dimension type's, a data pack's
@@ -2864,7 +2945,7 @@ impl OverworldGenerator {
             .unwrap_or(false)
         {
             Arc::new(
-                Pipeline::new(
+                Pipeline::new_mapped(
                     data,
                     seed,
                     LegacyRandom::new(seed),
@@ -2873,12 +2954,13 @@ impl OverworldGenerator {
                     with_structures,
                     level,
                     regions.as_deref(),
+                    coordinate_map,
                 )?
                 .with_mod_terrain(terrain)?,
             )
         } else {
             Arc::new(
-                Pipeline::new(
+                Pipeline::new_mapped(
                     data,
                     seed,
                     XoroshiroRandom::new(seed),
@@ -2887,6 +2969,7 @@ impl OverworldGenerator {
                     with_structures,
                     level,
                     regions.as_deref(),
+                    coordinate_map,
                 )?
                 .with_mod_terrain(terrain)?,
             )
@@ -3719,6 +3802,45 @@ mod tests {
                 .is_empty()
         );
         assert_eq!(second.state.carver_biomes, expected);
+    }
+
+    /// A level whose coordinate map moves every column 4096 blocks along X reads the terrain
+    /// height and biome a level without one has 4096 blocks further on.
+    #[test]
+    fn a_coordinate_map_moves_where_terrain_and_biomes_are_read() {
+        let Some(data) = prepared_data() else {
+            return;
+        };
+        #[derive(Debug)]
+        struct Shift;
+        impl horizon_core::density::CoordinateMap for Shift {
+            fn map(&self, x: i32, z: i32) -> [i32; 2] {
+                [x + 4096, z]
+            }
+        }
+        let preset: Value =
+            serde_json::from_str(data.world_presets.get("minecraft:normal").unwrap()).unwrap();
+        let stem = preset["dimensions"]["minecraft:overworld"].clone();
+        let flat = OverworldGenerator::from_stem(data.clone(), 7, &stem, false, None, None, None)
+            .expect("flat generator");
+        let shifted =
+            OverworldGenerator::from_stem(data, 7, &stem, false, None, None, Some(Arc::new(Shift)))
+                .expect("mapped generator");
+        let (mut flat, mut shifted) = (flat.worker(), shifted.worker());
+        for x in [0, 37, 200, -515] {
+            for z in [-50, 0, 80] {
+                let a = flat
+                    .surface_sample(x + 4096, z)
+                    .map(|s| (s.height, s.biome));
+                let b = shifted.surface_sample(x, z).map(|s| (s.height, s.biome));
+                assert_eq!(a, b, "column {x} {z}");
+                let quart = [[(x + 4096) >> 2, 16, z >> 2]];
+                assert_eq!(
+                    flat.noise_biomes(&quart),
+                    shifted.noise_biomes(&[[x >> 2, 16, z >> 2]])
+                );
+            }
+        }
     }
 
     /// The prepared worldgen data, if this checkout has it.

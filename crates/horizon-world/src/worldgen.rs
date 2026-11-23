@@ -44,6 +44,7 @@ pub mod generator;
 mod generator_blocks;
 mod generator_decoration;
 mod generator_structures;
+mod mapped_noise;
 pub(crate) use generator_structures::tag_json;
 pub mod height_provider;
 pub mod iceberg;

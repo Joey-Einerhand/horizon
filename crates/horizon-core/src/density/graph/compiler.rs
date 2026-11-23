@@ -10,6 +10,8 @@ pub struct DensityCompiler {
     prepared: HashMap<FunctionId, FunctionId>,
     next_cache: usize,
     context: Option<seeded::SeededContext>,
+    /// Where the level's X/Z noise leaves read (`coordinate_map`); `None` reads them in place.
+    coordinate_map: Option<Arc<dyn CoordinateMap>>,
     /// Distinguishes this compiler's function ids from other compilers'.
     instance: u64,
 }
@@ -23,7 +25,14 @@ impl DensityCompiler {
             prepared: HashMap::new(),
             next_cache: 0,
             context: None,
+            coordinate_map: None,
         }
+    }
+    /// Read every X/Z noise leaf this compiler compiles at `map`'s column (`coordinate_map`).
+    /// Set it before the first sampler is compiled: samplers already compiled keep their reads.
+    pub fn with_coordinate_map(mut self, map: Option<Arc<dyn CoordinateMap>>) -> Self {
+        self.coordinate_map = map;
+        self
     }
     pub fn new_seeded(graph: DensityGraph, seed: i64, use_legacy_random: bool) -> Self {
         let mut compiler = Self::new(graph);
@@ -163,6 +172,15 @@ impl DensityCompiler {
                 return Ok(factory.sampler(seed));
             }
             Definition::Node(node) => node,
+        };
+        // The leaves that read X or Z, which a coordinate map moves.
+        let reads_xz = match node {
+            GraphNode::Noise { .. }
+            | GraphNode::OffsetNoise { .. }
+            | GraphNode::BlendedNoise(_)
+            | GraphNode::EndIslands => true,
+            GraphNode::Gradient { axis, .. } => !matches!(axis, crate::geometry::Axis::Y),
+            _ => false,
         };
         let sampler: Arc<dyn DensitySampler> = match *node {
             GraphNode::Constant(value) => Arc::new(ConstantSampler(value)),
@@ -434,7 +452,13 @@ impl DensityCompiler {
                 height,
             )?),
         };
-        Ok(sampler)
+        Ok(match &self.coordinate_map {
+            Some(map) if reads_xz => Arc::new(super::super::coordinate_map::MappedSampler {
+                input: sampler,
+                map: map.clone(),
+            }),
+            _ => sampler,
+        })
     }
     fn compile_binary(
         &self,

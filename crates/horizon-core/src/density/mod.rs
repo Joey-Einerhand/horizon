@@ -14,6 +14,8 @@ pub use beardifier::{
     TerrainAdjustment, TerrainKernel,
 };
 mod cache;
+pub mod coordinate_map;
+pub use coordinate_map::CoordinateMap;
 mod world_fields;
 pub use world_fields::{
     BlendDensitySampler, ContextBoundSampler, DensityBlender, EmptyBlender, WorldField, WorldFields,
@@ -101,6 +103,8 @@ pub struct SamplerContext {
     /// Known lattice samples interpolated samplers may read instead of
     /// sampling their (pointwise) input again.
     lattice: Vec<LatticeSamples>,
+    /// Inside a mapped leaf (`coordinate_map`): positions are already the mapped ones.
+    mapped: bool,
 }
 /// An interpolated sampler's input values over a volume on its cell lattice.
 #[derive(Clone, Debug)]

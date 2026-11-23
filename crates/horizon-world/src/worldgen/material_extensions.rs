@@ -60,6 +60,9 @@ pub struct MaterialExtensions<P> {
     blocks: ExtensionBlocks,
     noises: ExtensionNoises,
     sea_level: i32,
+    /// Where the noises read each column (`horizon_core::density::coordinate_map`), before
+    /// their own scaling; `None` reads them in place.
+    coordinate_map: Option<Arc<dyn horizon_core::density::CoordinateMap>>,
 }
 impl<P: PositionalRandom> MaterialExtensions<P> {
     pub fn new(
@@ -73,7 +76,21 @@ impl<P: PositionalRandom> MaterialExtensions<P> {
             blocks,
             noises,
             sea_level,
+            coordinate_map: None,
         }
+    }
+    /// Read the pillar noises at `map`'s columns.
+    pub fn with_coordinate_map(
+        mut self,
+        map: Option<Arc<dyn horizon_core::density::CoordinateMap>>,
+    ) -> Self {
+        self.coordinate_map = map;
+        self
+    }
+    /// The column the noises read for block column (`x`, `z`).
+    fn noise_column(&self, x: i32, z: i32) -> [f64; 2] {
+        let [x, z] = self.coordinate_map.as_ref().map_or([x, z], |m| m.map(x, z));
+        [f64::from(x), f64::from(z)]
     }
     pub fn eroded_badlands<C: MaterialColumn>(
         &self,
@@ -83,8 +100,7 @@ impl<P: PositionalRandom> MaterialExtensions<P> {
         surface_y: i32,
         min_y: i32,
     ) -> Result<(), ExtensionError<C::Error>> {
-        let x = f64::from(x);
-        let z = f64::from(z);
+        let [x, z] = self.noise_column(x, z);
         let amplitude = java_min(
             (f64::from(self.noises.badlands_surface.get3(x, 0.0, z)) * 8.25).abs(),
             f64::from(self.noises.badlands_pillar.get3(x * 0.2, 0.0, z * 0.2) * 15.0),
@@ -149,8 +165,7 @@ impl<P: PositionalRandom> MaterialExtensions<P> {
         melt: impl FnOnce(BlockPos, i32) -> Result<bool, C::Error>,
     ) -> Result<(), ExtensionError<C::Error>> {
         let [x, z] = position;
-        let dx = f64::from(x);
-        let dz = f64::from(z);
+        let [dx, dz] = self.noise_column(x, z);
         let amplitude = java_min(
             (f64::from(self.noises.iceberg_surface.get3(dx, 0.0, dz)) * 8.25).abs(),
             f64::from(self.noises.iceberg_pillar.get3(dx * 1.28, 0.0, dz * 1.28) * 15.0),

@@ -153,7 +153,21 @@ pub fn generate_carving_mask<'a, E>(
     target: ChunkPos,
     context: WorldGenerationContext,
     upgrading: bool,
+    carvers: impl FnMut(ChunkPos) -> Result<&'a [Arc<WorldCarver>], E>,
+) -> Result<CarvingMask, MaskGenerationError<E>> {
+    generate_carving_mask_seeded(world_seed, target, context, upgrading, carvers, &|origin| {
+        origin
+    })
+}
+/// [`generate_carving_mask`], each origin's carvers seeded by `seed_chunk(origin)`'s chunk
+/// (`CoordinateMap::seed_chunk`) while they carve from the origin itself.
+pub fn generate_carving_mask_seeded<'a, E>(
+    world_seed: i64,
+    target: ChunkPos,
+    context: WorldGenerationContext,
+    upgrading: bool,
     mut carvers: impl FnMut(ChunkPos) -> Result<&'a [Arc<WorldCarver>], E>,
+    seed_chunk: &dyn Fn(ChunkPos) -> ChunkPos,
 ) -> Result<CarvingMask, MaskGenerationError<E>> {
     let min = context.min_y.wrapping_add(1);
     let max = context
@@ -172,6 +186,7 @@ pub fn generate_carving_mask<'a, E>(
             if selected.len() > 1024 {
                 return Err(MaskGenerationError::TooManyCarvers);
             }
+            let seeded = seed_chunk(origin);
             for (index, carver) in selected.iter().enumerate() {
                 let mut random = if let Some(slot) = cached_seeds.get_mut(index) {
                     let (mx, mz, seed) = *slot.get_or_insert_with(|| {
@@ -180,12 +195,12 @@ pub fn generate_carving_mask<'a, E>(
                         (rng.next_long(), rng.next_long(), seed)
                     });
                     LegacyRandom::new(
-                        i64::from(origin.x).wrapping_mul(mx)
-                            ^ i64::from(origin.z).wrapping_mul(mz)
+                        i64::from(seeded.x).wrapping_mul(mx)
+                            ^ i64::from(seeded.z).wrapping_mul(mz)
                             ^ seed,
                     )
                 } else {
-                    large_feature_random(world_seed.wrapping_add(index as i64), origin)
+                    large_feature_random(world_seed.wrapping_add(index as i64), seeded)
                 };
                 if carver.is_start_chunk(&mut random) {
                     carver
@@ -225,6 +240,41 @@ mod tests {
             .map(|id| ((*id).to_owned(), CAVE.to_owned()))
             .collect();
         CarverCatalog::from_json(&definitions).unwrap()
+    }
+
+    /// Carvers seeded by another chunk carve what that chunk's own carvers would, moved to where
+    /// they start: a target 256 chunks west, seeding each origin 256 chunks east, gets the mask
+    /// the eastern target gets. The plain mask differs.
+    #[test]
+    fn a_seed_chunk_makes_carvers_carve_as_the_chunk_whose_seed_they_draw() {
+        let caves = catalog(&["minecraft:cave"])
+            .decode_set(r#"["minecraft:cave"]"#)
+            .unwrap();
+        let context = WorldGenerationContext::new(-64, 384, 63);
+        let columns = |mask: &CarvingMask| {
+            mask.columns()
+                .map(|c| (c.x, c.z, c.min_y, c.max_y))
+                .collect::<Vec<_>>()
+        };
+        let mut found_caves = false;
+        for z in 0..16 {
+            let east = ChunkPos::new(260, z);
+            let west = ChunkPos::new(4, z);
+            let carvers = |_| Ok::<_, ()>(caves.as_slice());
+            let plain_east = generate_carving_mask(7, east, context, false, carvers).unwrap();
+            let seeded_west =
+                generate_carving_mask_seeded(7, west, context, false, carvers, &|o| {
+                    ChunkPos::new(o.x + 256, o.z)
+                })
+                .unwrap();
+            let plain_west = generate_carving_mask(7, west, context, false, carvers).unwrap();
+            assert_eq!(columns(&seeded_west), columns(&plain_east), "row {z}");
+            if !plain_east.is_empty() {
+                found_caves = true;
+                assert_ne!(columns(&plain_west), columns(&plain_east), "row {z}");
+            }
+        }
+        assert!(found_caves, "the fixture carves something");
     }
 
     /// A biome's carver a content root left out drops while nothing supplies
