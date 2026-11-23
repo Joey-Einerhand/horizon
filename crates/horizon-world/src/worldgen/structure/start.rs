@@ -635,7 +635,6 @@ impl StructureRegistry {
     /// RandomSpreadStructurePlacement.getPotentialStructureChunk et al.
     /// RandomSpreadStructurePlacement.getPotentialStructureChunk for the
     /// sector holding chunk (`x`, `z`); `None` for other placements.
-    #[horizon_mod_api_macros::replaceable]
     pub fn potential_chunk(set: &StructureSet, seed: i64, x: i32, z: i32) -> Option<ChunkPos> {
         let Placement::RandomSpread {
             spacing,
