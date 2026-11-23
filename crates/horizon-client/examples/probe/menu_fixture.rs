@@ -96,6 +96,8 @@ pub fn main() -> horizon_client::Result<()> {
     let defaults = horizon_world::item_defaults::read(root)?;
     let items = Items::catalog(root, &PackOverlay::NONE, &defaults)?;
     // Stacks as `ItemStack.CODEC` builds them: no value equal to the prototype.
+    // The game's own NBT decode (`item_from_nbt`) has no registry yet, so the
+    // init rows, which print these inputs back, need it here.
     let parse_stack = |snbt: &str| parse_stack_with_items(snbt, &items);
     let recipes = Recipes::load(
         root,

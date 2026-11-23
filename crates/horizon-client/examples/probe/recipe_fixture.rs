@@ -6,7 +6,7 @@
 use horizon_client::{
     crafting::Recipes,
     enchant::Enchantments,
-    item_data::{canon_stack, parse_stack_with_items},
+    item_data::{canon_stack, parse_stack},
     items::Items,
     stations::StationRecipes,
 };
@@ -38,7 +38,7 @@ pub fn main() -> horizon_client::Result<()> {
     let mut out = String::new();
     for line in input.lines() {
         let f: Vec<&str> = line.split('\t').collect();
-        let stack = |i: usize| parse_stack_with_items(f[i], &items);
+        let stack = |i: usize| parse_stack(f[i]);
         let text = match f[0] {
             "craft" => {
                 let n: usize = f[1].parse()?;
