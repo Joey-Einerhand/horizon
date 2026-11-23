@@ -53,7 +53,10 @@ impl Game<'_> {
             // of every level comes home first, as it does for a line typed on the console.
             // `server-status` is asked every second by the supervisor: it reads the regions' last reports
             // instead (`away_status_players`), so a region stays out.
-            if !request.line.trim().starts_with("server-events") && request.line.trim() != "server-status" {
+            if !request.line.trim().starts_with("server-events")
+                && request.line.trim() != "server-status"
+                && !horizon_client::lan::hub::reads_tick_reports(&request.line)
+            {
                 self.land_residents();
             }
             let reply = match request.line.trim().split_once(' ') {

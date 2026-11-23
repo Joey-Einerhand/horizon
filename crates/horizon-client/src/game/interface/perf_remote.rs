@@ -110,24 +110,50 @@ impl Game<'_> {
         }
     }
 
-    /// Sends `reply` to the guest on `conn`, if it is still here.
-    pub(in crate::game) fn perf_reply(&self, conn: u32, reply: &Reply) {
+    /// Whether the player on `conn` is online: in the server's own hub, or away in a resident region, which
+    /// holds them between its ticks. A region's lend is not a leave.
+    fn perf_player_online(&self, conn: u32) -> bool {
+        self.lan
+            .as_ref()
+            .is_some_and(|h| h.hub.guest(conn).is_some() || h.hub.away.contains(&conn))
+    }
+
+    /// Sends `reply` to the player on `conn`, if they are still online: straight away when they are here, else
+    /// to their region, which delivers it before its next tick.
+    pub(in crate::game) fn perf_reply(&mut self, conn: u32, reply: &Reply) {
         if let Some(guest) = self.lan.as_ref().and_then(|h| h.hub.guest(conn)) {
             guest.send(&payload(reply));
+            return;
         }
+        let away = self
+            .away_server_players()
+            .find(|p| p.conn == conn)
+            .map(|p| p.uuid);
+        if let Some(uuid) = away {
+            self.queue_for_away(uuid, payload(reply), true);
+        }
+    }
+
+    /// The bytes sent to the player on `conn` and not framed yet, wherever they are; None once they are gone.
+    fn perf_backlog(&self, conn: u32) -> Option<usize> {
+        if let Some(guest) = self.lan.as_ref().and_then(|h| h.hub.guest(conn)) {
+            return Some(guest.sender.pending.load(Ordering::Relaxed));
+        }
+        self.away_server_players()
+            .find(|p| p.conn == conn)
+            .map(|p| p.sender.pending.load(Ordering::Relaxed))
     }
 
     /// What guests asked since the last tick, and a stop when the guest whose capture runs has left.
     pub(in crate::game) fn take_perf_asked(&mut self) -> Vec<Asked> {
-        let served = &mut self.profile.served;
-        let mut asked = std::mem::take(&mut served.asked);
-        if let Some(r) = served.requester.as_mut()
-            && !r.left
-            && self
-                .lan
-                .as_ref()
-                .is_some_and(|h| h.hub.guest(r.conn).is_none())
-        {
+        let mut asked = std::mem::take(&mut self.profile.served.asked);
+        let gone = self
+            .profile
+            .served
+            .requester
+            .as_ref()
+            .is_some_and(|r| !r.left && !self.perf_player_online(r.conn));
+        if gone && let Some(r) = self.profile.served.requester.as_mut() {
             r.left = true;
             log::info!("Horizon: {} left; their server profile stops", r.name);
             asked.push(Asked::Stop(StopReason::Disconnected));
@@ -164,7 +190,7 @@ impl Game<'_> {
     }
 
     /// The capture `conn` asked for could not begin.
-    pub(in crate::game) fn perf_refused(&self, conn: u32, why: Refusal) {
+    pub(in crate::game) fn perf_refused(&mut self, conn: u32, why: Refusal) {
         self.perf_reply(conn, &Reply::Refused(why));
     }
 
@@ -226,25 +252,28 @@ impl Game<'_> {
     pub(in crate::game) fn pump_perf_files(&mut self) {
         let now = Instant::now();
         let mut sending = std::mem::take(&mut self.profile.served.sending);
+        let mut out = Vec::new();
         sending.retain_mut(|s| {
-            let Some(guest) = self.lan.as_ref().and_then(|h| h.hub.guest(s.conn)) else {
+            let Some(queued) = self.perf_backlog(s.conn) else {
                 return false;
             };
-            let queued = guest.sender.pending.load(Ordering::Relaxed);
             let Some(n) = s.pace.next(now, queued) else {
                 return !s.pace.done();
             };
             let mut chunk = vec![0; n];
             match s.file.read_exact(&mut chunk) {
-                Ok(()) => guest.send(&payload(&Reply::Chunk(chunk))),
+                Ok(()) => out.push((s.conn, Reply::Chunk(chunk))),
                 Err(e) => {
                     log::warn!("Horizon: a server profile could not be read for sending: {e}");
-                    guest.send(&payload(&Reply::Refused(Refusal::Failed)));
+                    out.push((s.conn, Reply::Refused(Refusal::Failed)));
                     return false;
                 }
             }
             !s.pace.done()
         });
+        for (conn, reply) in out {
+            self.perf_reply(conn, &reply);
+        }
         sending.append(&mut self.profile.served.sending);
         self.profile.served.sending = sending;
     }
@@ -275,5 +304,43 @@ impl Game<'_> {
                 Asked::Stop(reason) => self.stop_server_capture(reason, None),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn asker_of(game: &mut Game<'_>, conn: u32) {
+        game.profile.served.requester = Some(Requester {
+            conn,
+            name: "guest12".into(),
+            left: false,
+        });
+    }
+
+    #[test]
+    fn a_profile_stays_with_its_player_while_their_region_has_them_and_stops_when_they_leave() {
+        crate::game::native_guest_turn_tests::with_guests(|game| {
+            asker_of(game, 12);
+            assert!(game.take_perf_asked().is_empty(), "the player is here");
+            // Their region is lent them: they are away, not gone.
+            let host = game.lan.as_mut().unwrap();
+            let lent = host
+                .hub
+                .split_guests(1, |conn| (conn == 12).then_some(0))
+                .remove(0);
+            host.hub.away.insert(12);
+            assert!(host.hub.guest(12).is_none());
+            for _ in 0..3 {
+                assert!(game.take_perf_asked().is_empty(), "a lend is not a leave");
+            }
+            assert!(!game.profile.served.requester.as_ref().unwrap().left);
+            // They leave from their region.
+            drop(lent);
+            game.lan.as_mut().unwrap().hub.away.remove(&12);
+            let asked = game.take_perf_asked();
+            assert!(matches!(asked[..], [Asked::Stop(StopReason::Disconnected)]));
+        });
     }
 }

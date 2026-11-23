@@ -2127,13 +2127,6 @@ impl Game<'_> {
             }
         }
     }
-    /// Drops what is remembered for ids from `start` up: nothing alive holds them, so it belongs to entities
-    /// that are gone, and the ids are about to be handed out again.
-    pub(super) fn forget_ids_from(&mut self, start: u32) {
-        self.persist.uuids.retain(|id, _| *id < start);
-        self.persist.raw.retain(|id, _| *id < start);
-        self.persist.passenger_slots.retain(|id, _| *id < start);
-    }
     pub(super) fn prune_entity_memory(&mut self) {
         if !self.persist.removed_vehicles.is_empty()
             || self.persist.off_level.values().any(OffLevel::is_removed)

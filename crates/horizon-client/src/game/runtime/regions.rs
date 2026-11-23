@@ -524,6 +524,7 @@ pub(super) struct AwayStatus {
 }
 
 pub(super) struct AwayPlayer {
+    pub conn: u32,
     pub id: u32,
     pub uuid: u128,
     pub sender: horizon_client::lan::PlayerSender,
@@ -628,10 +629,12 @@ impl ResidentSet {
     }
 }
 
-/// Entity ids a region game takes from the shared counter at a time, and how few it may have left before a tick
-/// before it takes more (no tick hands out anywhere near that many).
-const ID_BLOCK: u32 = 1 << 20;
-const ID_REFILL: u32 = 1 << 15;
+/// Entity ids a region game takes from the one global counter at a time, and how few it may have left before a
+/// tick before it takes more (no tick hands out anywhere near that many). The counter only goes up, as vanilla's
+/// `Entity.nextEntityId` does: a block is never given back, so what a game leaves of one is lost, at most
+/// `ID_REFILL` of a block.
+const ID_BLOCK: u32 = 1 << 16;
+const ID_REFILL: u32 = 1 << 14;
 /// Ticks a level stays unsplit after one of its regions failed.
 const FAILED_PAUSE: u32 = 200;
 
@@ -667,7 +670,9 @@ enum Land {
 }
 
 /// Whether region game `w` has something for the server's thread, so its region must come back: commands, menus
-/// of native mods, a player dead or leaving, a raid (`region_raids_want_home`).
+/// of native mods, a player dying or leaving, a raid (`region_raids_want_home`). A player who stays dead costs one
+/// landing, for the death: while they wait on the death screen their region stays out, and comes home for what
+/// they send (their respawn is a packet).
 fn wants_land(w: &Game<'_>) -> bool {
     if !w.level_teleports.is_empty() || !w.server_trips.is_empty() || w.region_raids_want_home() {
         return true;
@@ -681,7 +686,7 @@ fn wants_land(w: &Game<'_>) -> bool {
         || h.hub
             .guests
             .iter()
-            .any(|g| g.dead || g.health <= 0.0 || !g.left_reason.is_empty())
+            .any(|g| ((g.dead || g.health <= 0.0) && !g.death_landed) || !g.left_reason.is_empty())
 }
 
 impl Game<'_> {
@@ -804,25 +809,28 @@ impl Game<'_> {
         self.level.difficulty_locked = from.level.difficulty_locked;
     }
 
-    /// The next entity ids this region game hands out: a block of its own from `pool` (the server's shared
-    /// counter) when the one it has runs low, so no two threads ever give out the same id.
+    /// The next entity ids this region game hands out: a block of its own from `pool` (the one global counter)
+    /// when the one it has runs low, so no two threads ever give out the same id. An id is handed out once in
+    /// the server's life, so nothing remembered under an id in a fresh block can belong to an earlier entity.
     pub(super) fn refill_entity_ids(&mut self, pool: &AtomicU32) {
-        if self.regions.entity_id_end.saturating_sub(self.next_entity) < ID_REFILL {
-            let start = pool.fetch_add(ID_BLOCK, Ordering::Relaxed);
-            self.next_entity = start;
-            self.regions.entity_id_end = start + ID_BLOCK;
-            // The block is fresh: whatever is remembered under its ids is a dead entity's, and a new entity
-            // must not inherit its UUID or saved data (the pool winds back in `trim_entity_ids`).
-            if !self.persist.uuids.is_empty() || !self.persist.raw.is_empty() {
-                let end = start + ID_BLOCK;
-                self.persist.uuids.retain(|id, _| *id < start || *id >= end);
-                self.persist.raw.retain(|id, _| *id < start || *id >= end);
-                self.persist
-                    .passenger_slots
-                    .retain(|id, _| *id < start || *id >= end);
-            }
-        }
+        refill_id_block(pool, &mut self.next_entity, &mut self.regions.entity_id_end);
     }
+}
+
+/// Takes a new block of ids from `pool` into (`next`, `end`) when fewer than [`ID_REFILL`] are left in the
+/// current one. The counter saturates below `u32::MAX` instead of wrapping onto ids in use, so a world that
+/// really runs out of ids says so (`Game::entity_ids_exhausted`) and spawns nothing.
+fn refill_id_block(pool: &AtomicU32, next: &mut u32, end: &mut u32) {
+    if end.saturating_sub(*next) >= ID_REFILL {
+        return;
+    }
+    let start = pool
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |at| {
+            Some(at.saturating_add(ID_BLOCK))
+        })
+        .unwrap_or(u32::MAX);
+    *next = start;
+    *end = start.saturating_add(ID_BLOCK);
 }
 
 impl Game<'_> {
@@ -1594,6 +1602,7 @@ impl Game<'_> {
                         .iter()
                         .filter(|g| g.placed && g.participates_online())
                         .map(|g| AwayPlayer {
+                            conn: g.conn,
                             id: g.entity_id as u32,
                             uuid: g.uuid,
                             sender: g.sender.clone(),
@@ -1867,14 +1876,12 @@ impl Game<'_> {
         set.take_in_born();
         let mut host = self.lan.take();
         let mut back = Vec::with_capacity(set.games.len());
-        let mut lost = false;
         // Whose packets were held for this set's regions: only theirs are released below. Another level's resident
         // regions keep theirs away.
         let mut conns: Vec<u32> = Vec::new();
         for mut slot in set.games {
             conns.extend(slot.conns.iter().copied());
             let Some(mut w) = slot.game.take() else {
-                lost = true;
                 continue;
             };
             if slot.landed {
@@ -1912,9 +1919,6 @@ impl Game<'_> {
         for w in back {
             self.regions.spares.give(w);
         }
-        if !lost {
-            self.trim_entity_ids();
-        }
         self.deliver_away_out_home();
         self.wake_returned_guests();
         // The regions of this level are home: /tps has no last ticks of them to show.
@@ -1930,41 +1934,6 @@ impl Game<'_> {
         {
             self.wake_guests();
         }
-    }
-
-    /// With every region home, the shared counter of entity ids goes back to just above the highest id any game
-    /// handed out, and every region game gives up its block (it takes a fresh one at its next lend): the counter
-    /// grows with the ids used, not by a block per game and cycle, and never wraps back onto ids in use.
-    fn trim_entity_ids(&mut self) {
-        if !self.regions.resident.is_empty() || self.regions.flight.is_some() {
-            return;
-        }
-        let Some(pool) = self.regions.entity_pool.clone() else {
-            return;
-        };
-        let spares = Arc::clone(&self.regions.spares);
-        let mut spare_games = spares.lock();
-        let mut high = self.next_entity;
-        for game in spare_games.iter() {
-            high = high.max(game.next_entity);
-        }
-        for game in spare_games.iter_mut() {
-            game.next_entity = 0;
-            game.regions.entity_id_end = 0;
-        }
-        pool.store(high.saturating_add(1), Ordering::Relaxed);
-        // Nothing alive holds an id above `high`; what is remembered there is a dead entity's, and the
-        // ids are handed out again from the pool.
-        self.forget_ids_from(high.saturating_add(1));
-        for game in spare_games.iter_mut() {
-            game.forget_ids_from(high.saturating_add(1));
-        }
-        drop(spare_games);
-        // The server's own block ends where it stands, and takes a fresh one from the wound-back pool at once:
-        // whatever the server spawns before its next tick (a summon, a chunk's mobs) must not take ids the
-        // pool hands out again to regions or to its own next refill.
-        self.regions.entity_id_end = self.next_entity;
-        self.refill_entity_ids(&pool);
     }
 
     /// The players native mods can see: those away in a resident region, as it last reported them.
@@ -2957,6 +2926,94 @@ impl Game<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn thousands_of_lends_across_seventy_regions_take_ids_only_as_they_are_used() {
+        let pool = AtomicU32::new(1);
+        // Every region game's (next id, end of its block).
+        let mut games = vec![(0u32, 0u32); 70];
+        let mut blocks: Vec<(u32, u32)> = Vec::new();
+        let mut used = 0u64;
+        for cycle in 0..5000usize {
+            for (k, (next, end)) in games.iter_mut().enumerate() {
+                // A lend: the game tops up its block when it runs low.
+                let before = *end;
+                refill_id_block(&pool, next, end);
+                if *end != before {
+                    blocks.push((*next, *end));
+                }
+                // Its tick spawns a few entities; the landing gives nothing back.
+                for _ in 0..1 + (cycle * 7 + k * 13) % 40 {
+                    *next += 1;
+                    assert!(*next < *end, "a tick ran past its block");
+                    used += 1;
+                }
+            }
+        }
+        let handed = u64::from(pool.load(Ordering::Relaxed));
+        assert!(
+            handed < u64::from(u32::MAX) / 100,
+            "{handed} ids handed out for {used} used"
+        );
+        // Whatever a game leaves of its blocks is lost, never reused: no two blocks share an id.
+        blocks.sort_unstable();
+        assert!(blocks.windows(2).all(|w| w[0].1 <= w[1].0));
+        assert!(blocks.len() > 70, "the games took more than one block each");
+    }
+
+    #[test]
+    fn a_player_who_stays_dead_lands_their_region_once_for_the_death_and_not_again_until_they_respawn() {
+        crate::game::native_guest_turn_tests::with_guests(|game| {
+            let wants = |game: &Game<'_>| wants_land(game);
+            assert!(!wants(game), "two living players want nothing");
+            let host = game.lan.as_mut().unwrap();
+            host.hub.update_guest(12, |g| g.health = 0.0).unwrap();
+            assert!(wants(game), "a player dying: the death is for the server's thread");
+            // The region goes out with the player and comes home for it.
+            let host = game.lan.as_mut().unwrap();
+            let mut region = host.hub.region_shell();
+            let out = host
+                .hub
+                .split_guests(1, |conn| (conn == 12).then_some(0))
+                .remove(0);
+            region.guests.extend(out);
+            host.hub.take_guests_back(&mut region);
+            host.hub.update_guest(12, |g| g.dead = true).unwrap();
+            for _ in 0..100 {
+                assert!(!wants(game), "a dead player's region is lent again and stays out");
+            }
+            // Their respawn is theirs to ask for; once alive, the next death lands once more.
+            game.guest_respawn(12);
+            let g = game.lan.as_ref().unwrap().hub.guest(12).unwrap();
+            assert!(!g.dead && !g.death_landed);
+            game.lan
+                .as_mut()
+                .unwrap()
+                .hub
+                .update_guest(12, |g| g.health = 0.0)
+                .unwrap();
+            assert!(wants(game), "a second death lands again");
+        });
+    }
+
+    #[test]
+    fn tps_and_mspt_are_answered_by_the_region_of_the_player_who_typed_them() {
+        use horizon_protocol::packets::play::{ChatCommand, Serverbound};
+        crate::game::native_guest_turn_tests::with_guests(|game| {
+            let hub = &game.lan.as_ref().unwrap().hub;
+            let typed = |line: &str| {
+                Serverbound::ChatCommand(ChatCommand {
+                    command: line.to_owned(),
+                })
+            };
+            assert!(hub.away_local(&typed("tps")));
+            assert!(hub.away_local(&typed("mspt")));
+            // What reaches other players or chunks still brings every region home.
+            assert!(!hub.away_local(&typed("tps extra")));
+            assert!(!hub.away_local(&typed("kill @a")));
+            assert!(!hub.away_local(&typed("tp Bob")));
+        });
+    }
 
     #[test]
     fn a_landed_regions_sleepers_leave_the_away_count() {

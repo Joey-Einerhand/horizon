@@ -351,6 +351,15 @@ fn take_tracking(
     }
 }
 
+/// Whether `line` is a command that reads only the server's own tick reports, `/tps` and `/mspt`: the region of the
+/// player who typed it answers it from where it is, and the console's line runs without bringing a region home.
+pub fn reads_tick_reports(line: &str) -> bool {
+    matches!(
+        line.trim().trim_start_matches('/').trim_end(),
+        "tps" | "mspt"
+    )
+}
+
 /// Whether a player's packet stays inside the player's region, so its region thread handles it. What reaches
 /// other players or the whole server (chat, commands, respawning, settings, mod messages) is the server's.
 pub(crate) fn region_local(p: &S) -> bool {
@@ -976,6 +985,8 @@ impl Hub {
             if let Some(view) = self.lan.shared.roster_return_scoreboard(g.conn) {
                 g.scoreboard = view;
             }
+            // Home with the player dead: the server's thread has the death to see to this tick.
+            g.death_landed = g.dead || g.health <= 0.0;
         }
         self.guests.extend(guests);
         self.native_menu_events
@@ -3231,12 +3242,14 @@ impl Hub {
             .any(|(event, _)| !matches!(event, NetEvent::Packet(_, p, _) if self.away_local(p)))
     }
 
-    /// Whether a packet of an away player is handled by its region: [`region_local`], and plain chat (a line and
-    /// its acknowledgements) while no mod or chat filter has to see it first. The region's hub relays the line to
+    /// Whether a packet of an away player is handled by its region: [`region_local`], `/tps` and `/mspt` while no
+    /// mod has to hear the command first ([`reads_tick_reports`]), and plain chat (a line and its
+    /// acknowledgements) while no mod or chat filter has to see it first. The region's hub relays the line to
     /// its own players, and the server's thread carries it to the others ([`chat::RegionChat`]).
     pub fn away_local(&self, p: &S) -> bool {
         region_local(p)
             || match p {
+                S::ChatCommand(c) => self.chat_in_region() && reads_tick_reports(&c.command),
                 S::ChatAck(_) => self.chat_in_region(),
                 S::Chat(c) => self.chat_in_region() && self.chat_filter_passes(&c.message),
                 _ => false,

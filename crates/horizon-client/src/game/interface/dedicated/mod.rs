@@ -1915,8 +1915,11 @@ impl Game<'_> {
 
     /// `console_line` with `inform` as `CommandSource.shouldInformAdmins`.
     fn console_line_telling(&mut self, state: &mut ServerState, line: &str, inform: bool) {
-        // The command may reach any player or chunk: regions out on their threads come home first.
-        self.land_residents();
+        // The command may reach any player or chunk: regions out on their threads come home first. `/tps` and
+        // `/mspt` only read the regions' last ticks, which landing them would erase.
+        if !horizon_client::lan::hub::reads_tick_reports(line) {
+            self.land_residents();
+        }
         self.console_broadcast = Some(inform);
         self.console_command(state, line);
         self.console_broadcast = None;

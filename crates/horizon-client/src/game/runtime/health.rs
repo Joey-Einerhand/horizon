@@ -61,6 +61,26 @@ pub(super) fn record_regions(level: &str, stats: Vec<RegionStat>) {
     r.extend(stats);
 }
 
+/// The regions' last ticks in one line of `/tps`.
+#[derive(Debug, PartialEq)]
+struct Summary {
+    count: usize,
+    slowest: f32,
+    average: f32,
+    late: usize,
+}
+
+fn summarize(regions: &[RegionStat]) -> Summary {
+    // Not `Iterator::sum`: over nothing it gives -0.0, which prints as "-0.0".
+    let total = regions.iter().fold(0.0f32, |total, r| total + r.ms);
+    Summary {
+        count: regions.len(),
+        slowest: regions.iter().fold(0.0f32, |slowest, r| slowest.max(r.ms)),
+        average: total / regions.len().max(1) as f32,
+        late: regions.iter().filter(|r| r.late).count(),
+    }
+}
+
 /// TPS (at most 20 a second, as Paper counts it) and the tick times (average, max) of the ticks that ended
 /// in the last `window`.
 fn window(t: &Ticks, now: Instant, window: Duration) -> Option<(f64, f64, f64, f64)> {
@@ -140,10 +160,12 @@ impl Game<'_> {
             self.system_message(if i == 0 { text.with_color(color) } else { text });
         }
         let regions = lock(&REGIONS).clone();
-        let count = regions.len();
-        let slowest = regions.iter().map(|r| r.ms).fold(0.0f32, f32::max);
-        let average = regions.iter().map(|r| r.ms).sum::<f32>() / count.max(1) as f32;
-        let late = regions.iter().filter(|r| r.late).count();
+        let Summary {
+            count,
+            slowest,
+            average,
+            late,
+        } = summarize(&regions);
         self.system_message(tr(
             "horizon.health.regions",
             &[
@@ -220,5 +242,40 @@ impl Span {
             Self::Seconds(n) => tr("horizon.health.seconds", &[&n]).plain(),
             Self::Minutes(n) => tr("horizon.health.minutes", &[&n]).plain(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn stat(ms: f32, late: bool) -> RegionStat {
+        RegionStat {
+            ms,
+            late,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn the_regions_line_of_tps_adds_up_each_regions_last_tick() {
+        let s = summarize(&[stat(10.0, false), stat(70.0, true), stat(25.0, false)]);
+        assert_eq!(
+            s,
+            Summary {
+                count: 3,
+                slowest: 70.0,
+                average: 35.0,
+                late: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn with_no_region_the_average_is_zero_not_negative_zero() {
+        let s = summarize(&[]);
+        assert_eq!((s.count, s.late), (0, 0));
+        assert_eq!(format!("{:.1}", s.average), "0.0");
+        assert_eq!(format!("{:.1}", s.slowest), "0.0");
     }
 }
