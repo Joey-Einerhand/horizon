@@ -81,6 +81,7 @@ use window_handler::ClientQuit;
 // `Action` here is the title screen's buttons (`title::Action`).
 use self::api_values::TryIntoApi;
 pub(crate) use api_values::{block_jump_factor, block_speed_factor, is_ladder};
+pub(crate) use graphics_tuning::exit_if_supervisor_is_gone;
 use horizon_client::actions::Action as Mapping;
 use horizon_client::spans::{startup, time as span};
 use horizon_client::{
@@ -1173,6 +1174,8 @@ struct Game<'a> {
     last_input: Instant,
     /// Controllers (Horizon's own).
     pad: pad::Pads,
+    /// The registered input source, this player's own (`None`: the pad modules answer).
+    input_source: Option<Box<dyn horizon_client::input_source::InputSource>>,
     frames: u64,
     /// The glint clock and options, read once per frame (game/interface/item_draw.rs).
     glint_frame: horizon_client::item_render::GlintFrame,
@@ -6411,7 +6414,7 @@ impl Game<'_> {
         &self,
         chunks: impl IntoIterator<Item = &'a Arc<horizon_client::chunk::Chunk>>,
     ) -> Vec<Arc<horizon_client::chunk::Chunk>> {
-        horizon_client::save::chunks_with_block_entities(
+        horizon_client::save::chunks_with_revised_block_entities(
             chunks,
             &self.world.block_entities,
             &self.world.block_names,
@@ -7898,7 +7901,7 @@ impl Game<'_> {
     }
     /// Copy the live player and world state into the `Level` that gets saved.
     pub(super) fn sync_level(&mut self) {
-        self.level.player_impulse_grace = self.player.as_ref().map(|p| p.impulse.reset_grace_time);
+        self.level.player_impulse = self.player.as_ref().map(|p| p.impulse);
         self.level.player_fall_particles = self
             .player
             .as_ref()
@@ -11079,7 +11082,7 @@ impl<'a> Game<'a> {
         let creative = options.creative;
         let inventory = vec![None; 36];
         let now = Instant::now();
-        let look = options.look;
+        let (look, role) = (options.look, options.execution_role);
         let slow_frame_ms = options
             .spikes
             .unwrap_or(horizon_client::client_perf::SLOW_FRAME_MS);
@@ -11242,6 +11245,7 @@ impl<'a> Game<'a> {
             previous: now,
             last_input: now,
             pad: Default::default(),
+            input_source: play_input::input_source(role),
             frames: 0,
             glint_frame: Default::default(),
             kept_block_entities: Default::default(),
