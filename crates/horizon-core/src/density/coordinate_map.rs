@@ -158,6 +158,34 @@ mod tests {
         assert_eq!(graph.domain_axes_mapped(along_y, true), Ok(2));
     }
 
+    /// Slice(X = 0, X gradient) under an X/Z swap: the slice fixes real X, but the gradient
+    /// reads the mapped X, real Z, so it still varies along Z. The prepared sampler must agree
+    /// with the raw one, which slices nothing.
+    #[test]
+    fn a_slice_of_real_x_keeps_a_mapped_leaf_moving_with_real_z() {
+        let mut graph = DensityGraph::new();
+        let x = gradient_x(&mut graph);
+        let slice = graph
+            .insert(GraphNode::Slice {
+                axis: Axis::X,
+                coordinate: 0,
+                input: x,
+            })
+            .unwrap();
+        assert_eq!(graph.domain_axes(slice), Ok(0));
+        assert_eq!(graph.domain_axes_mapped(slice, true), Ok(4));
+        let mut mapped = DensityCompiler::new(graph).with_coordinate_map(Some(Arc::new(Swap)));
+        let raw = mapped.compile_raw(slice).unwrap();
+        let prepared = mapped.get_sampler(slice).unwrap();
+        let mut context = SamplerContext::default();
+        let expected = raw.sample_value(&mut context, [10, 0, 90]).unwrap();
+        assert!((expected - 0.9).abs() < 0.02, "{expected}");
+        assert_eq!(
+            prepared.sample_value(&mut context, [10, 0, 90]).unwrap(),
+            expected
+        );
+    }
+
     #[test]
     fn without_a_map_nothing_is_wrapped() {
         let mut graph = DensityGraph::new();
