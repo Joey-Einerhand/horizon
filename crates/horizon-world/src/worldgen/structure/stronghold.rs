@@ -18,7 +18,6 @@ use {
 /// ChunkGeneratorStructureState.generateRingPositions with
 /// BiomeSource.findBiomeHorizontal (radius 112, step 1, not closest).
 /// `biomes` samples a search's quarts in order, as one caching resolver.
-#[horizon_mod_api_macros::replaceable]
 pub fn ring_positions(
     seed: i64,
     distance: i32,
@@ -109,7 +108,10 @@ impl RingSearch {
 }
 
 /// The ring chunks and search randoms of generateRingPositions, in order:
-/// the serial part, cheap; the searches can then run anywhere.
+/// the serial part, cheap; the searches can then run anywhere. Generation
+/// and the stronghold lookups take their ring positions from here
+/// (`StructureRegistry::ring_searches`), so a replacement moves them.
+#[horizon_mod_api_macros::replaceable]
 pub fn ring_searches(seed: i64, distance: i32, spread: i32, count: i32) -> Vec<RingSearch> {
     let mut random = LegacyRandom::new(seed);
     let mut angle = random.next_double() * PI * 2.0;
