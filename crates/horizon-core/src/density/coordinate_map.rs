@@ -98,6 +98,51 @@ mod tests {
         assert_eq!(b, c);
     }
 
+    /// abs(X gradient) + Z gradient: unmapped, the abs only varies along X, so the optimizer
+    /// slices Z away above it. Mapped, the X gradient reads the swapped column (real Z), so a
+    /// Z slice there would pin it to 0.
+    #[test]
+    fn a_mapped_gradient_keeps_the_axes_it_reads_through_slicing() {
+        use crate::density::graph::{GraphBinary, GraphUnary};
+        let mut graph = DensityGraph::new();
+        let x = gradient_x(&mut graph);
+        let abs = graph
+            .insert(GraphNode::Unary {
+                kind: GraphUnary::Abs,
+                input: x,
+            })
+            .unwrap();
+        let z = graph
+            .insert(GraphNode::Gradient {
+                axis: Axis::Z,
+                tiling: TilingMode::ClampToEdge,
+                from: 0,
+                to: 100,
+                low: 0.0,
+                high: 1.0,
+            })
+            .unwrap();
+        let root = graph
+            .insert(GraphNode::Binary {
+                kind: GraphBinary::Add,
+                left: abs,
+                right: z,
+            })
+            .unwrap();
+        assert_eq!(graph.domain_axes(x), Ok(1));
+        assert_eq!(graph.domain_axes_mapped(x, true), Ok(5));
+        let mut flat = DensityCompiler::new(graph.clone());
+        let mut mapped = DensityCompiler::new(graph).with_coordinate_map(Some(Arc::new(Swap)));
+        let mut context = SamplerContext::default();
+        let flat = flat.get_sampler(root).unwrap();
+        let mapped = mapped.get_sampler(root).unwrap();
+        // Mapped column (10, 90) reads (90, 10): |0.9| + 0.1 there.
+        let swapped = flat.sample_value(&mut context, [90, 0, 10]).unwrap();
+        let b = mapped.sample_value(&mut context, [10, 0, 90]).unwrap();
+        assert!((swapped - 1.0).abs() < 0.03, "{swapped}");
+        assert_eq!(b, swapped);
+    }
+
     #[test]
     fn without_a_map_nothing_is_wrapped() {
         let mut graph = DensityGraph::new();

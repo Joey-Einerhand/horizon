@@ -619,6 +619,11 @@ impl DensityGraph {
         Ok(self.entry(left)?.equality_id == self.entry(right)?.equality_id)
     }
     pub fn domain_axes(&self, id: FunctionId) -> Result<u8, CompileError> {
+        self.domain_axes_mapped(id, false)
+    }
+    /// `domain_axes` of a level whose X/Z leaves read at a coordinate map (`mapped`): an X or Z
+    /// gradient then reads the mapped column, which moves with both X and Z.
+    pub fn domain_axes_mapped(&self, id: FunctionId, mapped: bool) -> Result<u8, CompileError> {
         let mut node = match &self.entry(id)?.definition {
             Definition::Bound { axes, .. } | Definition::Seeded { axes, .. } => return Ok(*axes),
             Definition::Node(node) => node.clone(),
@@ -638,11 +643,12 @@ impl DensityGraph {
                     axes |= 2;
                 }
                 for child in node.children_mut() {
-                    axes |= self.domain_axes(*child)?;
+                    axes |= self.domain_axes_mapped(*child, mapped)?;
                 }
                 return Ok(axes);
             }
             GraphNode::Constant(_) => return Ok(0),
+            GraphNode::Gradient { axis, .. } if mapped && axis != Axis::Y => return Ok(5),
             GraphNode::Gradient { axis, .. } => return Ok(1 << axis as u8),
             GraphNode::DistanceToPoint { .. } => return Ok(7),
             GraphNode::Slice { axis, .. } => !(1 << axis as u8),
@@ -651,7 +657,7 @@ impl DensityGraph {
         };
         let mut axes = 0;
         for child in node.children_mut() {
-            axes |= self.domain_axes(*child)?;
+            axes |= self.domain_axes_mapped(*child, mapped)?;
         }
         Ok(axes & mask)
     }

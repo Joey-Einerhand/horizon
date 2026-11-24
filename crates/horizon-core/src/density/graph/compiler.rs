@@ -106,7 +106,7 @@ impl DensityCompiler {
             let sampler = self.compile_raw(optimized)?;
             let sampler = Arc::new(CachingDensitySampler::new(cache_id, sampler)?);
             let range = self.graph.range(optimized)?;
-            let axes = self.graph.domain_axes(optimized)?;
+            let axes = self.domain_axes(optimized)?;
             let prepared = self.graph.bind(sampler, range, axes)?;
             self.prepared.insert(input, prepared);
             return Ok(prepared);
@@ -124,7 +124,7 @@ impl DensityCompiler {
         ) {
             return Ok(id);
         }
-        let axes = self.graph.domain_axes(id)?;
+        let axes = self.domain_axes(id)?;
         let mut result = self.rewrite_children(id, |compiler, child| {
             compiler.slice_uniform_axes(child, axes)
         })?;
@@ -151,6 +151,12 @@ impl DensityCompiler {
             }
         }
         Ok(result)
+    }
+    /// The axes `id` varies along as this compiler samples it: with a coordinate map, its X and Z
+    /// gradients read the mapped column, so slicing and caches keep both axes for them.
+    fn domain_axes(&self, id: FunctionId) -> Result<u8, CompileError> {
+        self.graph
+            .domain_axes_mapped(id, self.coordinate_map.is_some())
     }
     fn constant(&self, id: FunctionId) -> Option<f32> {
         match self.graph.entries[id.0].definition {
