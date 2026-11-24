@@ -288,6 +288,7 @@ fn frame<'a>(
         shadow_cache: Default::default(),
         distance: Default::default(),
         detail_distance: 128.0,
+        world_warp: None,
         depth_far: 1024.0,
         underwater: Default::default(),
         water_plane: Default::default(),
