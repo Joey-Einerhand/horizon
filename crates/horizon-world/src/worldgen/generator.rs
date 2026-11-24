@@ -363,7 +363,7 @@ struct Pipeline<R: RandomSource> {
     surface: MaterialSurface<R::Positional>,
     noises: BTreeMap<String, Arc<dyn Noise>>,
     extensions: MaterialExtensions<R::Positional>,
-    /// The level's coordinate map (`coordinate_map_for`), for what reads chunks, not columns.
+    /// The level's coordinate map (`coordinate_map::coordinate_map_for`), for what reads chunks, not columns.
     coordinate_map: Option<Arc<dyn horizon_core::density::CoordinateMap>>,
     picker: GlobalFluidPicker,
     zoom: BiomeZoom,
@@ -432,20 +432,6 @@ impl ChunkWork {
         work.insert(key, Arc::downgrade(&lock));
         lock
     }
-}
-
-/// Where level `dimension`'s noises read each block column (`horizon_core::density::coordinate_map`):
-/// in place, in vanilla. A mod whose world wraps, such as a ringworld, replaces this with a
-/// `[[native.mixin]]` that answers its map for the Overworld, so terrain, climate, biomes,
-/// aquifers, far terrain and spawn finding join where its X wraps. Asked once each time a
-/// level's generator is built.
-#[horizon_mod_api_macros::replaceable]
-pub fn coordinate_map_for(
-    dimension: &str,
-    seed: i64,
-) -> Option<Arc<dyn horizon_core::density::CoordinateMap>> {
-    let _ = (dimension, seed);
-    None
 }
 
 const CACHE_SHARDS: usize = 64;
@@ -3139,7 +3125,7 @@ impl OverworldGenerator {
         if stem["generator"]["type"].as_str() != Some("minecraft:noise") {
             return Err(resource(format!("{dimension} is not a noise generator")));
         }
-        let coordinate_map = coordinate_map_for(dimension, seed);
+        let coordinate_map = super::coordinate_map::coordinate_map_for(dimension, seed);
         Self::from_stem(
             data,
             seed,

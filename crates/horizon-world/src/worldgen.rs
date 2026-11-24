@@ -24,6 +24,7 @@ pub mod carving;
 pub mod cave;
 pub mod chorus_plant;
 pub mod climate;
+pub mod coordinate_map;
 pub mod decoration;
 pub mod decoration_order;
 pub mod delta;

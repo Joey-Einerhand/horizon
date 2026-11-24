@@ -184,7 +184,7 @@ impl OverworldGenerator {
         };
         // The level's map moves the vanilla stages the mod keeps (biomes, surface, aquifers,
         // carvers), as it does for a noise level.
-        let coordinate_map = super::coordinate_map_for(level, seed);
+        let coordinate_map = crate::worldgen::coordinate_map::coordinate_map_for(level, seed);
         Self::from_stem(
             data,
             seed,
