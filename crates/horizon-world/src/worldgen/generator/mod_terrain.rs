@@ -182,7 +182,18 @@ impl OverworldGenerator {
             generator,
             stages,
         };
-        Self::from_stem(data, seed, stem, stages.structures, None, Some(terrain))
+        // The level's map moves the vanilla stages the mod keeps (biomes, surface, aquifers,
+        // carvers), as it does for a noise level.
+        let coordinate_map = super::coordinate_map_for(level, seed);
+        Self::from_stem(
+            data,
+            seed,
+            stem,
+            stages.structures,
+            None,
+            Some(terrain),
+            coordinate_map,
+        )
     }
 }
 

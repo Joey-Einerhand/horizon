@@ -58,6 +58,17 @@ impl GeneratorData {
         seed: i64,
         level: Option<(i32, i32)>,
     ) -> Result<DecodedNoiseSettings, GeneratorError> {
+        self.decode_noise_settings_mapped(settings_json, seed, level, None)
+    }
+    /// [`Self::decode_noise_settings`] for a level whose noises read at `coordinate_map`'s
+    /// columns (`horizon_core::density::coordinate_map`).
+    pub(super) fn decode_noise_settings_mapped(
+        &self,
+        settings_json: &Value,
+        seed: i64,
+        level: Option<(i32, i32)>,
+        coordinate_map: Option<std::sync::Arc<dyn horizon_core::density::CoordinateMap>>,
+    ) -> Result<DecodedNoiseSettings, GeneratorError> {
         let data = self;
         let registry = data.registry;
         let heights = heights(settings_json, level)?;
@@ -106,13 +117,14 @@ impl GeneratorData {
             .filter(|v| !v.is_null())
             .map(|v| AquiferConfig::from_json(&v.to_string(), &mut densities))
             .transpose()?;
-        let mut library = MaterialRuleLibrary::from_json(
+        let mut library = MaterialRuleLibrary::from_json_mapped(
             &data.rules,
             &data.conditions,
             &codec,
             densities,
             seed,
             settings.legacy,
+            coordinate_map,
         )?;
         let router = library.compile_router(router)?;
         let debug_density = debug_functions
