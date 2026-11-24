@@ -152,8 +152,8 @@ impl DensityCompiler {
         }
         Ok(result)
     }
-    /// The axes `id` varies along as this compiler samples it: with a coordinate map, its X and Z
-    /// gradients read the mapped column, so slicing and caches keep both axes for them.
+    /// The axes `id` varies along as this compiler samples it: with a coordinate map, what reads X
+    /// or Z reads the mapped column, so slicing and caches keep both axes for it.
     fn domain_axes(&self, id: FunctionId) -> Result<u8, CompileError> {
         self.graph
             .domain_axes_mapped(id, self.coordinate_map.is_some())

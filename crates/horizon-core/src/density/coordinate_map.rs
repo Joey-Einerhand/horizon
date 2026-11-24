@@ -143,6 +143,21 @@ mod tests {
         assert_eq!(b, swapped);
     }
 
+    /// A bound or seeded definition declares its axes; under a map, one that reads X or Z reads
+    /// the mapped column, so it varies along both. One that reads neither keeps its axes.
+    #[test]
+    fn a_mapped_bound_definition_that_reads_x_or_z_varies_along_both() {
+        let mut graph = DensityGraph::new();
+        let x = gradient_x(&mut graph);
+        let sampler = DensityCompiler::new(graph.clone()).get_sampler(x).unwrap();
+        let range = crate::density::interval::Interval::new(0.0, 1.0).unwrap();
+        let along_x = graph.bind(sampler.clone(), range, 1).unwrap();
+        let along_y = graph.bind(sampler, range, 2).unwrap();
+        assert_eq!(graph.domain_axes_mapped(along_x, false), Ok(1));
+        assert_eq!(graph.domain_axes_mapped(along_x, true), Ok(5));
+        assert_eq!(graph.domain_axes_mapped(along_y, true), Ok(2));
+    }
+
     #[test]
     fn without_a_map_nothing_is_wrapped() {
         let mut graph = DensityGraph::new();

@@ -817,7 +817,13 @@ where
                 .into_iter()
                 .filter_map(|name| pipeline.data.biome_id(name))
                 .collect();
-            let rings = pipeline.data.rings_for(seed, generator);
+            // The ring searches read the level's biomes, which a coordinate map moves: a mapped
+            // level keeps its own rings, not the ones shared by seed and generator.
+            let rings = if pipeline.coordinate_map.is_some() {
+                Arc::new(std::sync::OnceLock::new())
+            } else {
+                pipeline.data.rings_for(seed, generator)
+            };
             pipeline.structures =
                 super::generator_structures::StructureState::new(&pipeline.data, &possible, rings)?;
             if let Some(state) = pipeline.structures.as_mut() {
