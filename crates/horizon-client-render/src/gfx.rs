@@ -7581,7 +7581,14 @@ impl Renderer {
     ) -> JoinedFrusta {
         let views = ViewSet::single(self.screen_view(fov_degrees, yaw, pitch, depth_far));
         let planes = frustum(views.cull().view_proj(bob));
-        self.ask_world_views(camera, depth_far, Frustum { planes, warp: None })
+        let camera_view = Frustum { planes, warp: None }.warped(self.world_warp);
+        self.ask_world_views(camera, depth_far, camera_view)
+    }
+    /// This frame's world warp (`Frame::world_warp`), set before the culls made outside its
+    /// draw (`camera_frustum`, `camera_frustum_with_jitter`) so they bend each box as the draw
+    /// will; the draw sets it again from its frame.
+    pub fn set_world_warp(&mut self, warp: Option<WorldWarp>) {
+        self.world_warp = warp.filter(WorldWarp::is_valid);
     }
     /// A conservative view for geometry built before TAA chooses this frame's
     /// jitter. Cover a whole rendered pixel on each side, at the configured
@@ -8256,6 +8263,7 @@ impl Renderer {
             taa,
             view_proj,
             frame.camera,
+            frame.world_warp,
         );
         let jittered = jitter * view_proj;
         if frame.title {
@@ -8431,6 +8439,8 @@ impl Renderer {
         if frame.hand.len() >= 4 && !pack_draws_hand {
             let hand_globals = Globals {
                 view_proj: hand_view_proj.to_cols_array_2d(),
+                // The hand is drawn in the camera's space, not the world's: never bent.
+                world_warp: WorldWarp::uniform(None),
                 ..globals
             };
             self.uploads.buffer(
@@ -8446,6 +8456,7 @@ impl Renderer {
             let crosshair_globals = Globals {
                 view_proj: (hand_projection * view).to_cols_array_2d(),
                 fog_color: [0.0; 4],
+                world_warp: WorldWarp::uniform(None),
                 ..globals
             };
             self.uploads.buffer(
@@ -8503,7 +8514,10 @@ impl Renderer {
         // Solid quads facing away from the eye are left out: the bob moves
         // the eye off `camera`, so it is found from the projection. With the mirror, those
         // facing its eye are kept too: it sits straight below, at this camera-relative y.
-        let eye = view::projection_center(cull_proj).filter(|_| self.sides_on);
+        // Under a world warp the bend turns faces toward the camera that face away from its
+        // flat eye, so every side is kept.
+        let eye = view::projection_center(cull_proj)
+            .filter(|_| self.sides_on && frame.world_warp.is_none());
         let mirror_low = mirror_plane
             .zip(eye)
             .map(|(plane, eye)| 2.0 * (plane - frame.camera.y as f32) - eye.y);
@@ -8930,6 +8944,8 @@ impl Renderer {
                     .page_buffers()
                     .all(|(page, _)| page < visbuffer::MAX_PAGES))
             && !gpu_frame
+            // Meshlet culling tests flat boxes and faces, as GPU culling does.
+            && frame.world_warp.is_none()
             && !msaa_on
             && !frame.title
             && !pack_terrain
@@ -12162,7 +12178,9 @@ impl Renderer {
                 depth: depth.clone(),
                 render_size: self.world_post.size().unwrap_or(size),
                 jitter: self.world_post.jitter_pixels(),
-                reproject: self.frame_gen.camera_motion(view_proj, frame.camera),
+                reproject: self
+                    .frame_gen
+                    .camera_motion(view_proj, frame.camera, frame.world_warp),
                 near: NEAR_PLANE,
                 far: frame.depth_far,
                 fov_y: frame.fov_degrees.to_radians(),

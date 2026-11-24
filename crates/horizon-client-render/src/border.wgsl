@@ -24,8 +24,10 @@ struct Out {
 fn border_warp(p: vec3<f32>, w: vec4<f32>) -> vec3<f32> {
     if w.x == 0.0 { return p; }
     let a = p.x / w.y;
-    let s = w.z - p.y;
-    return vec3(s * sin(a), w.z - s * cos(a), p.z);
+    // The height w.z - (w.z - p.y)·cos a, written without the cancellation that loses p.y once
+    // the radius dwarfs it.
+    let h = sin(a * 0.5);
+    return vec3((w.z - p.y) * sin(a), 2.0 * w.z * h * h + p.y * cos(a), p.z);
 }
 @vertex fn vs_border(@location(0) position: vec3<f32>, @location(1) uv: vec2<f32>) -> Out {
     var out: Out;

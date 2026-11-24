@@ -39,6 +39,8 @@
 
 use glam::Mat4;
 
+use super::super::world_warp::WarpedMotion;
+
 /// One real frame's inputs.
 pub struct Inputs<'a> {
     /// This frame's colour without the hand and HUD: `display` size, a filterable
@@ -56,6 +58,8 @@ pub struct Inputs<'a> {
     /// `world_post::reprojection`): the motion vectors are the camera's, from this and
     /// the depth.
     pub reproject: Mat4,
+    /// The same through a world warp, used when either frame is bent.
+    pub motion: WarpedMotion,
     /// What moved on its own: `motion::FORMAT` at `render_size`, xy its motion vector
     /// (FSR's convention, in UV) where z is 1, used over the camera's.
     pub object_motion: &'a wgpu::TextureView,
@@ -86,6 +90,7 @@ struct Params {
     tan_half_fov: f32,
     level_size: [i32; 2],
     _pad: [u32; 2],
+    motion: WarpedMotion,
 }
 
 /// The game vector field pyramid's levels (`LoadInpaintedGameFieldMv`) and the
@@ -429,6 +434,7 @@ impl Interpolation {
             tan_half_fov: (0.5 * inputs.fov_y).tan() * render[0] as f32 / render[1].max(1) as f32,
             level_size: [0; 2],
             _pad: [0; 2],
+            motion: inputs.motion,
         };
         queue.write_buffer(&self.params, 0, bytemuck::bytes_of(&base));
         let level_params = |buffers: &[wgpu::Buffer], sizes: &[[u32; 2]]| {
@@ -789,6 +795,7 @@ mod tests {
                     render_size: size,
                     jitter: [0.0; 2],
                     reproject: if i == 0 { Mat4::IDENTITY } else { reproject },
+                    motion: bytemuck::Zeroable::zeroed(),
                     object_motion: &object_motion,
                     near: 0.05,
                     far: 512.0,

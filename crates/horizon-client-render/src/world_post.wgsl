@@ -87,6 +87,13 @@ struct Taa {
     reproject: mat4x4<f32>,
     // xy: this frame's jitter in clip space; z: 1 when the history is unusable.
     jitter: vec4<f32>,
+    // The camera motion through a world warp (gfx/world_warp.rs `WarpedMotion`), when either
+    // frame is bent: `reproject` is a flat world's.
+    unproject: mat4x4<f32>,
+    previous: mat4x4<f32>,
+    offset: vec4<f32>,
+    warp: vec4<f32>,
+    previous_warp: vec4<f32>,
 };
 @group(0) @binding(2) var history: texture_2d<f32>;
 // The world's depth as an unfilterable float texture: naga's GLSL backend
@@ -95,6 +102,27 @@ struct Taa {
 // every backend.
 @group(0) @binding(3) var depth: texture_2d<f32>;
 @group(0) @binding(4) var<uniform> taa: Taa;
+
+// The world warp's bend (gfx/world_warp.rs `WorldWarp::point`) and its inverse (`unpoint`);
+// x 0 is no warp.
+fn taa_bend(p: vec3<f32>, w: vec4<f32>) -> vec3<f32> {
+    if w.x == 0.0 { return p; }
+    let a = p.x / w.y;
+    let h = sin(a * 0.5);
+    return vec3((w.z - p.y) * sin(a), 2.0 * w.z * h * h + p.y * cos(a), p.z);
+}
+fn taa_unbend(q: vec3<f32>, w: vec4<f32>) -> vec3<f32> {
+    if w.x == 0.0 { return q; }
+    let c = w.z - q.y;
+    return vec3(atan2(q.x, c) * w.y, w.z - length(vec2(q.x, c)), q.z);
+}
+// Where last frame drew the point this frame draws at `ndc` and `depth` (`WarpedMotion::
+// reproject`): unbent from this frame, moved to the previous camera, bent as it drew it.
+fn taa_warped_reproject(ndc: vec2<f32>, depth: f32) -> vec4<f32> {
+    let q = taa.unproject * vec4(ndc, depth, 1.0);
+    let flat = taa_unbend(q.xyz / q.w, taa.warp) + taa.offset.xyz;
+    return taa.previous * vec4(taa_bend(flat, taa.previous_warp), 1.0);
+}
 
 // Catmull-Rom over the history in 5 bilinear taps: sharper than one under motion.
 fn sample_history(uv: vec2<f32>) -> vec3<f32> {
@@ -174,7 +202,10 @@ fn clip_box(c: vec3<f32>, lo: vec3<f32>, hi: vec3<f32>) -> vec3<f32> {
         }
     }
     let ndc = vec2(in.uv.x * 2.0 - 1.0, 1.0 - in.uv.y * 2.0);
-    let previous = taa.reproject * vec4(ndc, near, 1.0);
+    var previous = taa.reproject * vec4(ndc, near, 1.0);
+    if taa.warp.x != 0.0 || taa.previous_warp.x != 0.0 {
+        previous = taa_warped_reproject(ndc, near);
+    }
     let uv = vec2(0.5, -0.5) * previous.xy / previous.w + 0.5;
     if taa.jitter.z > 0.0 || any(uv != clamp(uv, vec2(0.0), vec2(1.0))) {
         return vec4(centre.rgb, centre.a);

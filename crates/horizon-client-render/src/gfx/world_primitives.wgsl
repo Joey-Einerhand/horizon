@@ -27,8 +27,10 @@ struct QuadOut {
 fn primitive_warp(p: vec3<f32>, w: vec4<f32>) -> vec3<f32> {
     if w.x == 0.0 { return p; }
     let a = p.x / w.y;
-    let s = w.z - p.y;
-    return vec3(s * sin(a), w.z - s * cos(a), p.z);
+    // The height w.z - (w.z - p.y)·cos a, written without the cancellation that loses p.y once
+    // the radius dwarfs it.
+    let h = sin(a * 0.5);
+    return vec3((w.z - p.y) * sin(a), 2.0 * w.z * h * h + p.y * cos(a), p.z);
 }
 @vertex fn vs_quad(@location(0) pos: vec3<f32>, @location(1) uv: vec2<f32>,
     @location(2) layer: u32, @location(3) color: vec4<f32>, @location(4) light: u32) -> QuadOut {
@@ -69,8 +71,8 @@ struct LineOut {
     out.color = argb.zyxw;
 
     let view_shrink = 1.0 - 1.0 / 256.0;
-    let p0 = globals.view_proj * vec4(primitive_warp(start * view_shrink, globals.world_warp), 1.0);
-    let p1 = globals.view_proj * vec4(primitive_warp(end * view_shrink, globals.world_warp), 1.0);
+    let p0 = globals.view_proj * vec4(primitive_warp(start, globals.world_warp) * view_shrink, 1.0);
+    let p1 = globals.view_proj * vec4(primitive_warp(end, globals.world_warp) * view_shrink, 1.0);
 
     // An end behind the camera has no screen position: cut the line where it reaches the
     // near plane (in clip space, so the cut is exact), and drop it when both ends are behind.

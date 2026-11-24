@@ -58,8 +58,10 @@ fn world_warp_point(p: vec3<f32>) -> vec3<f32> {
     let w = globals.world_warp;
     if w.x == 0.0 { return p; }
     let a = p.x / w.y;
-    let s = w.z - p.y;
-    return vec3(s * sin(a), w.z - s * cos(a), p.z);
+    // The height w.z - (w.z - p.y)·cos a, written without the cancellation that loses p.y once
+    // the radius dwarfs it.
+    let h = sin(a * 0.5);
+    return vec3((w.z - p.y) * sin(a), 2.0 * w.z * h * h + p.y * cos(a), p.z);
 }
 @group(0) @binding(1) var sprites: texture_2d_array<f32>;
 @group(0) @binding(2) var sprite_sampler: sampler;
@@ -1114,9 +1116,9 @@ fn outline_clip(vertex: u32, start: vec3<f32>, end: vec3<f32>, width: f32) -> ve
     let normal = normalize(end - start);
     let view_shrink = 1.0 - 1.0 / 256.0;
     let line_start = globals.view_proj
-        * vec4(world_warp_point((position * globals.outline_params.w) * view_shrink), 1.0);
+        * vec4(world_warp_point(position * globals.outline_params.w) * view_shrink, 1.0);
     let line_end = globals.view_proj
-        * vec4(world_warp_point(((position + normal) * globals.outline_params.w) * view_shrink), 1.0);
+        * vec4(world_warp_point((position + normal) * globals.outline_params.w) * view_shrink, 1.0);
     let ndc1 = line_start.xyz / line_start.w;
     let ndc2 = line_end.xyz / line_end.w;
     let screen = globals.outline_params.xy;
@@ -1160,8 +1162,8 @@ struct DebugLineOut {
     @location(2) argb: vec4<f32>, @location(3) width: f32) -> DebugLineOut {
     let position = select(start, end, vertex >= 2u);
     let view_shrink = 1.0 - 1.0 / 256.0;
-    let line_start = globals.view_proj * vec4(world_warp_point(position * view_shrink), 1.0);
-    let line_end = globals.view_proj * vec4(world_warp_point((position + (end - start)) * view_shrink), 1.0);
+    let line_start = globals.view_proj * vec4(world_warp_point(position) * view_shrink, 1.0);
+    let line_end = globals.view_proj * vec4(world_warp_point(position + (end - start)) * view_shrink, 1.0);
     let ndc1 = line_start.xyz / line_start.w;
     let ndc2 = line_end.xyz / line_end.w;
     let screen = globals.outline_params.xy;

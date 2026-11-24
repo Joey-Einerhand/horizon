@@ -19,6 +19,8 @@ pub(in crate::gfx) mod motion;
 mod optical_flow;
 
 use glam::{DMat4, DVec3, Mat4};
+
+use super::world_warp::{WarpedMotion, WorldWarp};
 use std::{
     sync::{
         Arc,
@@ -69,7 +71,7 @@ pub struct FrameGen {
     last: Option<Instant>,
     interval: Duration,
     /// The last frame's unjittered `view_proj` and camera.
-    previous: Option<(DMat4, DVec3)>,
+    previous: Option<(DMat4, DVec3, Option<WorldWarp>)>,
     /// The last frame's hand vertices and the bob and view they were drawn with.
     hand: Vec<crate::mesher::Vertex>,
     hand_view: Mat4,
@@ -109,8 +111,9 @@ pub struct Camera {
     pub depth: wgpu::TextureView,
     pub render_size: [u32; 2],
     pub jitter: [f32; 2],
-    /// This frame's unjittered clip space to the previous frame's, `None` without one.
-    pub reproject: Option<Mat4>,
+    /// This frame's unjittered clip space to the previous frame's, `None` without one, and the
+    /// same through a world warp when either frame is bent (`camera_motion`).
+    pub reproject: Option<(Mat4, WarpedMotion)>,
     pub near: f32,
     pub far: f32,
     pub fov_y: f32,
@@ -228,10 +231,21 @@ impl FrameGen {
 
     /// This frame's unjittered clip space to the last frame's, from their `view_proj`s
     /// (relative to `camera`); `None` on the first frame.
-    pub fn camera_motion(&mut self, view_proj: Mat4, camera: DVec3) -> Option<Mat4> {
+    pub fn camera_motion(
+        &mut self,
+        view_proj: Mat4,
+        camera: DVec3,
+        warp: Option<WorldWarp>,
+    ) -> Option<(Mat4, WarpedMotion)> {
         let current = view_proj.as_dmat4();
-        let previous = self.previous.replace((current, camera));
-        previous.map(|(p, pc)| super::world_post::reprojection(p, pc, current, camera).as_mat4())
+        let warp = warp.filter(WorldWarp::is_valid);
+        let previous = self.previous.replace((current, camera, warp));
+        previous.map(|(p, pc, pw)| {
+            (
+                super::world_post::reprojection(p, pc, current, camera).as_mat4(),
+                WarpedMotion::new((p, pc, pw), (current, camera, warp)),
+            )
+        })
     }
 
     /// Frames to draw the real and the made frame into, from the present thread's
@@ -361,7 +375,9 @@ impl FrameGen {
     ) -> bool {
         let gpu = self.gpu.as_mut().expect("world() ran this frame");
         let reset = gpu.reset || camera.reproject.is_none();
-        let reproject = camera.reproject.unwrap_or(Mat4::IDENTITY);
+        let (reproject, warped) = camera
+            .reproject
+            .unwrap_or((Mat4::IDENTITY, bytemuck::Zeroable::zeroed()));
         let motion = self
             .motion
             .as_mut()
@@ -374,6 +390,7 @@ impl FrameGen {
             camera.view_proj,
             reproject * camera.view_proj,
             camera.world_warp,
+            warped,
         );
         let object_motion = motion.draw(device, encoder, &camera.depth);
         gpu.flow
@@ -388,6 +405,7 @@ impl FrameGen {
                 render_size: camera.render_size,
                 jitter: camera.jitter,
                 reproject,
+                motion: warped,
                 object_motion: &object_motion,
                 near: camera.near,
                 far: camera.far,

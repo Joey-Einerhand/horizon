@@ -48,6 +48,13 @@ struct Params {
     // A mip level's size, for the pyramid passes.
     level_size: vec2<i32>,
     _pad: vec2<u32>,
+    // The camera motion through a world warp (gfx/world_warp.rs `WarpedMotion`), when either
+    // frame is bent: `reproject` is a flat world's.
+    unproject: mat4x4<f32>,
+    previous: mat4x4<f32>,
+    offset: vec4<f32>,
+    warp: vec4<f32>,
+    previous_warp: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -320,13 +327,36 @@ fn has_scene_changed() -> bool {
     return (scene_change[1] & 0xfu) != 0u;
 }
 
+// The world warp's bend (gfx/world_warp.rs `WorldWarp::point`) and its inverse (`unpoint`);
+// x 0 is no warp.
+fn warp_bend(p: vec3<f32>, w: vec4<f32>) -> vec3<f32> {
+    if w.x == 0.0 { return p; }
+    let a = p.x / w.y;
+    let h = sin(a * 0.5);
+    return vec3((w.z - p.y) * sin(a), 2.0 * w.z * h * h + p.y * cos(a), p.z);
+}
+fn warp_unbend(q: vec3<f32>, w: vec4<f32>) -> vec3<f32> {
+    if w.x == 0.0 { return q; }
+    let c = w.z - q.y;
+    return vec3(atan2(q.x, c) * w.y, w.z - length(vec2(q.x, c)), q.z);
+}
+// Where last frame drew the point this frame draws at `ndc` and `depth` (`WarpedMotion::
+// reproject`): unbent from this frame, moved to the previous camera, bent as it drew it.
+fn warped_reproject(ndc: vec2<f32>, depth: f32) -> vec4<f32> {
+    let q = params.unproject * vec4(ndc, depth, 1.0);
+    let flat = warp_unbend(q.xyz / q.w, params.warp) + params.offset.xyz;
+    return params.previous * vec4(warp_bend(flat, params.previous_warp), 1.0);
+}
 // ffx_frameinterpolation_reconstruct_dilated_velocity_and_previous_depth.h, with the
 // motion vectors computed from the depth and the camera.
 fn camera_motion_vector(p: vec2<i32>, depth: f32) -> vec2<f32> {
     let size = vec2<f32>(params.render_size);
     let uv = (vec2<f32>(p) + 0.5) / size - params.jitter / size;
     let ndc = vec2(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0);
-    let previous = params.reproject * vec4(ndc, depth, 1.0);
+    var previous = params.reproject * vec4(ndc, depth, 1.0);
+    if params.warp.x != 0.0 || params.previous_warp.x != 0.0 {
+        previous = warped_reproject(ndc, depth);
+    }
     let previous_uv = vec2(0.5, -0.5) * previous.xy / previous.w + 0.5;
     return previous_uv - uv;
 }

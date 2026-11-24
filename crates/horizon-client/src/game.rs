@@ -8598,6 +8598,15 @@ impl Game<'_> {
             }
             _ => None,
         };
+        // This frame's warp, before the culls that keep what it bends into view.
+        let world_warp = if title {
+            None
+        } else {
+            self.frame_world_warp(camera)
+        };
+        if let Some(renderer) = self.renderer.as_mut() {
+            renderer.set_world_warp(world_warp);
+        }
         self.view_frustum =
             self.world_view_frustum(camera, [fov_degrees, yaw, pitch], bob * spin, depth_far);
         let billboard_frustum = if self.settings.horizon.taa {
@@ -8779,11 +8788,7 @@ impl Game<'_> {
             shadow_cache: self.settings.horizon.shadow_cache,
             distance,
             detail_distance: (self.streaming.radius * 16) as f32,
-            world_warp: if title {
-                None
-            } else {
-                self.frame_world_warp(camera)
-            },
+            world_warp,
             depth_far,
             underwater,
             water_plane: if title

@@ -7,6 +7,8 @@
 
 use crate::mesher::Vertex;
 use glam::{DVec3, Mat4, Vec3};
+
+use super::super::world_warp::WarpedMotion;
 use std::collections::HashMap;
 
 /// `motion.wgsl`'s `Params`.
@@ -17,6 +19,8 @@ struct Params {
     current: [[f32; 4]; 4],
     previous: [[f32; 4]; 4],
     world_warp: [f32; 4],
+    /// Where things were drawn last frame through a world warp (`WarpedMotion`).
+    motion: WarpedMotion,
 }
 
 /// A vertex this frame and where it was last frame, both relative to this frame's camera.
@@ -213,6 +217,7 @@ impl ObjectMotion {
         current: Mat4,
         previous: Mat4,
         world_warp: [f32; 4],
+        warped: WarpedMotion,
     ) {
         if self.target.as_ref().is_none_or(|t| t.0 != size) {
             let texture = device.create_texture(&wgpu::TextureDescriptor {
@@ -245,6 +250,7 @@ impl ObjectMotion {
             current: current.to_cols_array_2d(),
             previous: previous.to_cols_array_2d(),
             world_warp,
+            motion: warped,
         };
         queue.write_buffer(&self.params, 0, bytemuck::bytes_of(&params));
     }
@@ -519,7 +525,14 @@ mod tests {
             entities.extend(square(6.0, SHADOW_OVERLAY));
             motion.track(&entities, &[(0, 7), (4, 9), (8, 0), (12, 0)], DVec3::ZERO);
             motion.prepare(
-                &device, &queue, size, projection, projection, projection, [0.0; 4],
+                &device,
+                &queue,
+                size,
+                projection,
+                projection,
+                projection,
+                [0.0; 4],
+                bytemuck::Zeroable::zeroed(),
             );
             let mut encoder = device.create_command_encoder(&Default::default());
             let view = motion.draw(&device, &mut encoder, &depth);

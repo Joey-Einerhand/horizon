@@ -51,8 +51,10 @@ fn world_warp_point(p: vec3<f32>) -> vec3<f32> {
     let w = globals.world_warp;
     if w.x == 0.0 { return p; }
     let a = p.x / w.y;
-    let s = w.z - p.y;
-    return vec3(s * sin(a), w.z - s * cos(a), p.z);
+    // The height w.z - (w.z - p.y)·cos a, written without the cancellation that loses p.y once
+    // the radius dwarfs it.
+    let h = sin(a * 0.5);
+    return vec3((w.z - p.y) * sin(a), 2.0 * w.z * h * h + p.y * cos(a), p.z);
 }
 @group(0) @binding(1) var atlas: texture_2d<f32>;
 @group(0) @binding(2) var atlas_sampler: sampler;
@@ -136,7 +138,9 @@ fn native_colored_light(pos: vec3<f32>) -> vec3<f32> {
 fn entity_vertex(position: vec3<f32>, uv: vec2<f32>,
     overlay: u32, color: vec4<f32>, light: vec4<u32>, normal: vec4<f32>) -> Out {
     var out: Out;
-    out.clip = globals.view_proj * vec4(world_warp_point(position), 1.0);
+    // Sky geometry (clouds, celestial bodies: overlays 2 to 4) stays flat, as it stays unfogged.
+    let sky = overlay >= 2u && overlay <= 4u;
+    out.clip = globals.view_proj * vec4(select(world_warp_point(position), position, sky), 1.0);
     out.proj = vec4(out.clip.xy * 0.5 + out.clip.w * 0.5, out.clip.zw);
     out.uv = uv;
     let l = vec2(max(f32(light.y), dynamic_block_light(position)), f32(light.x));

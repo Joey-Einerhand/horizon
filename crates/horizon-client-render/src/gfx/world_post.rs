@@ -10,6 +10,8 @@
 
 use glam::{DMat4, DVec3, Mat4, Vec2};
 
+use super::world_warp::{WarpedMotion, WorldWarp};
+
 /// The least a world is scaled to when memory runs out.
 const MIN_SCALE: f32 = 0.25;
 /// The TAA history format: 8 bits would band as frames accumulate.
@@ -44,6 +46,9 @@ struct TaaUniform {
     reproject: [[f32; 4]; 4],
     /// xy: this frame's jitter in clip space; z: 1 when the history is unusable.
     jitter: [f32; 4],
+    /// The camera motion when a world warp bends either frame (`WarpedMotion`), which
+    /// `reproject` cannot carry; zero otherwise.
+    motion: WarpedMotion,
 }
 
 /// TAA's GPU resources, absent when the device cannot compile the shader.
@@ -71,6 +76,8 @@ pub(super) struct UpscaleFrame<'a> {
     pub jitter_pixels: [f32; 2],
     /// This frame's unjittered clip space to the previous frame's.
     pub reproject: [[f32; 4]; 4],
+    /// The same through a world warp, when either frame is bent (`WarpedMotion::is_warped`).
+    pub motion: WarpedMotion,
     /// The history is unusable: a cut, a resize, a frame without the upscaler.
     pub reset: bool,
     /// Frames jittered so far.
@@ -120,6 +127,7 @@ impl UpscalerBackend for TaaResources {
                 if frame.reset { 1.0 } else { 0.0 },
                 0.0,
             ],
+            motion: frame.motion,
         };
         uploads.buffer(encoder, &self.uniform, 0, bytemuck::bytes_of(&uniform));
         let attachments = [Some(wgpu::RenderPassColorAttachment {
@@ -176,7 +184,7 @@ pub struct Post {
     /// Frames jittered so far (the Halton index), and which history the next resolve writes.
     taa_frame: u32,
     /// The last TAA frame's unjittered `view_proj` and camera, `None` once a frame ran without it.
-    taa_previous: Option<(DMat4, DVec3)>,
+    taa_previous: Option<(DMat4, DVec3, Option<WorldWarp>)>,
     taa_this_frame: TaaUniform,
     light_key: Option<LightKey>,
 }
@@ -458,8 +466,16 @@ impl Post {
 
     /// TAA's sub-pixel jitter this frame, as a clip-space matrix to multiply into the
     /// world's projection (identity while `on` is false); `view_proj` is the unjittered
-    /// projection, relative to `camera`. Call it before `prepare`, once per frame.
-    pub fn jitter(&mut self, window: [u32; 2], on: bool, view_proj: Mat4, camera: DVec3) -> Mat4 {
+    /// projection, relative to `camera`, drawn bent by `warp`. Call it before `prepare`, once
+    /// per frame.
+    pub fn jitter(
+        &mut self,
+        window: [u32; 2],
+        on: bool,
+        view_proj: Mat4,
+        camera: DVec3,
+        warp: Option<WorldWarp>,
+    ) -> Mat4 {
         self.taa_on = on && self.taa && self.taa_resources.is_some();
         if !self.taa_on {
             self.taa_previous = None;
@@ -475,17 +491,23 @@ impl Post {
         let offset = Vec2::new(halton(i, 2), halton(i, 3)) - 0.5;
         let jitter = offset * 2.0 / Vec2::new(size[0] as f32, size[1] as f32);
         let current = view_proj.as_dmat4();
-        let (reproject, reset) = match self.taa_previous {
-            Some((previous, previous_camera)) => (
+        let warp = warp.filter(WorldWarp::is_valid);
+        let (reproject, motion, reset) = match self.taa_previous {
+            Some((previous, previous_camera, previous_warp)) => (
                 reprojection(previous, previous_camera, current, camera),
+                WarpedMotion::new(
+                    (previous, previous_camera, previous_warp),
+                    (current, camera, warp),
+                ),
                 0.0,
             ),
-            None => (DMat4::IDENTITY, 1.0),
+            None => (DMat4::IDENTITY, bytemuck::Zeroable::zeroed(), 1.0),
         };
-        self.taa_previous = Some((current, camera));
+        self.taa_previous = Some((current, camera, warp));
         self.taa_this_frame = TaaUniform {
             reproject: reproject.as_mat4().to_cols_array_2d(),
             jitter: [jitter.x, jitter.y, reset, 0.0],
+            motion,
         };
         Mat4::from_translation(jitter.extend(0.0))
     }
@@ -851,6 +873,7 @@ impl Post {
             jitter_clip: [self.taa_this_frame.jitter[0], self.taa_this_frame.jitter[1]],
             jitter_pixels: self.jitter_pixels(),
             reproject: self.taa_this_frame.reproject,
+            motion: self.taa_this_frame.motion,
             reset: self.taa_this_frame.jitter[2] > 0.5,
             index: self.taa_frame,
         };
@@ -1090,7 +1113,7 @@ mod tests {
         post.hold_upscale(true);
         assert_eq!(post.taa_render_size(window), scaled);
         assert_eq!(post.pack_render_size(window, false), scaled);
-        post.jitter(window, true, Mat4::IDENTITY, DVec3::ZERO);
+        post.jitter(window, true, Mat4::IDENTITY, DVec3::ZERO, None);
         let _ = post.prepare(&device, window, true, false);
         assert_eq!(post.size(), Some(scaled));
         let history = post.target.as_ref().and_then(|t| t.taa.as_ref());
@@ -1122,7 +1145,7 @@ mod tests {
         post.scale = 0.5;
         let resolve = |post: &mut Post, upscale| {
             post.upscale = upscale;
-            post.jitter(window, true, Mat4::IDENTITY, DVec3::ZERO);
+            post.jitter(window, true, Mat4::IDENTITY, DVec3::ZERO, None);
             let _ = post.prepare(&device, window, true, false);
             let mut encoder = device.create_command_encoder(&Default::default());
             let resolved = post.resolve_taa(&device, &queue, &mut encoder, None);
@@ -1159,38 +1182,38 @@ mod tests {
         let key = [5.0, 4.0, 1.0, 0.0];
         for gain in [true, false, true] {
             post.baked_light(LightKey::engine(gain, key));
-            post.jitter([32, 32], true, Mat4::IDENTITY, DVec3::ZERO);
+            post.jitter([32, 32], true, Mat4::IDENTITY, DVec3::ZERO, None);
             assert_eq!(post.taa_this_frame.jitter[2], 1.0);
             post.baked_light(LightKey::engine(gain, key));
-            post.jitter([32, 32], true, Mat4::IDENTITY, DVec3::ZERO);
+            post.jitter([32, 32], true, Mat4::IDENTITY, DVec3::ZERO, None);
             assert_eq!(post.taa_this_frame.jitter[2], 0.0);
         }
         for field in 0..4 {
             let mut changed = key;
             changed[field] += 0.01;
             post.baked_light(LightKey::engine(true, changed));
-            post.jitter([32, 32], true, Mat4::IDENTITY, DVec3::ZERO);
+            post.jitter([32, 32], true, Mat4::IDENTITY, DVec3::ZERO, None);
             assert_eq!(post.taa_this_frame.jitter[2], 1.0);
         }
         post.baked_light(LightKey::engine(false, key));
-        post.jitter([32, 32], true, Mat4::IDENTITY, DVec3::ZERO);
+        post.jitter([32, 32], true, Mat4::IDENTITY, DVec3::ZERO, None);
         assert_eq!(post.taa_this_frame.jitter[2], 1.0);
         post.baked_light(LightKey::engine(false, [0.0; 4]));
-        post.jitter([32, 32], true, Mat4::IDENTITY, DVec3::ZERO);
+        post.jitter([32, 32], true, Mat4::IDENTITY, DVec3::ZERO, None);
         assert_eq!(post.taa_this_frame.jitter[2], 0.0);
         // A pack disables TAA even when the light settings stay the same. Its first
         // world frame after the pack is dropped must not reuse the pre-pack history.
-        post.jitter([32, 32], false, Mat4::IDENTITY, DVec3::ZERO);
-        post.jitter([32, 32], true, Mat4::IDENTITY, DVec3::ZERO);
+        post.jitter([32, 32], false, Mat4::IDENTITY, DVec3::ZERO, None);
+        post.jitter([32, 32], true, Mat4::IDENTITY, DVec3::ZERO, None);
         assert_eq!(post.taa_this_frame.jitter[2], 1.0);
-        post.jitter([32, 32], true, Mat4::IDENTITY, DVec3::ZERO);
+        post.jitter([32, 32], true, Mat4::IDENTITY, DVec3::ZERO, None);
         assert_eq!(post.taa_this_frame.jitter[2], 0.0);
         // A pack the renderer resolves keeps TAA on: its install, the display's values and
         // the return to no pack each drop the history, and its frames alone keep it.
         let display = super::super::output::DisplayValues::SDR;
         post.forget_history();
         post.baked_light(LightKey::engine(false, [0.0; 4]));
-        post.jitter([32, 32], true, Mat4::IDENTITY, DVec3::ZERO);
+        post.jitter([32, 32], true, Mat4::IDENTITY, DVec3::ZERO, None);
         assert_eq!(post.taa_this_frame.jitter[2], 1.0);
         for (key, reset) in [
             (LightKey::Pack(display), 1.0),
@@ -1205,7 +1228,7 @@ mod tests {
             (LightKey::engine(false, [0.0; 4]), 1.0),
         ] {
             post.baked_light(key);
-            post.jitter([32, 32], true, Mat4::IDENTITY, DVec3::ZERO);
+            post.jitter([32, 32], true, Mat4::IDENTITY, DVec3::ZERO, None);
             assert_eq!(post.taa_this_frame.jitter[2], reset, "{key:?}");
         }
         eprintln!(

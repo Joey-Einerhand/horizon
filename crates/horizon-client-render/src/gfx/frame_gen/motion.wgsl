@@ -9,9 +9,15 @@ struct Params {
     jittered: mat4x4<f32>,
     current: mat4x4<f32>,
     previous: mat4x4<f32>,
-    // The world warp (`Globals.world_warp`): moving things are drawn bent, so their motion is
-    // measured bent too, with this frame's warp for both positions.
+    // The world warp (`Globals.world_warp`): moving things are drawn bent this frame.
     world_warp: vec4<f32>,
+    // Where they were drawn last frame through a warp (gfx/world_warp.rs `WarpedMotion`): the
+    // previous position moved to the previous camera, bent and projected as that frame did.
+    unproject: mat4x4<f32>,
+    previous_view_proj: mat4x4<f32>,
+    offset: vec4<f32>,
+    warp: vec4<f32>,
+    previous_warp: vec4<f32>,
 };
 
 @group(0) @binding(0) var<uniform> params: Params;
@@ -40,8 +46,10 @@ const NEW: u32 = 2u;
 fn motion_warp(p: vec3<f32>, w: vec4<f32>) -> vec3<f32> {
     if w.x == 0.0 { return p; }
     let a = p.x / w.y;
-    let s = w.z - p.y;
-    return vec3(s * sin(a), w.z - s * cos(a), p.z);
+    // The height w.z - (w.z - p.y)·cos a, written without the cancellation that loses p.y once
+    // the radius dwarfs it.
+    let h = sin(a * 0.5);
+    return vec3((w.z - p.y) * sin(a), 2.0 * w.z * h * h + p.y * cos(a), p.z);
 }
 @vertex fn vs_motion(@location(0) position: vec3<f32>, @location(1) previous: vec3<f32>,
     @location(2) uv: vec2<f32>, @location(3) flags: u32) -> Out {
@@ -51,7 +59,12 @@ fn motion_warp(p: vec3<f32>, w: vec4<f32>) -> vec3<f32> {
     let now = motion_warp(position, params.world_warp);
     out.clip = params.jittered * vec4(now, 1.0);
     out.current = params.current * vec4(now, 1.0);
-    out.previous = params.previous * vec4(motion_warp(previous, params.world_warp), 1.0);
+    if params.warp.x != 0.0 || params.previous_warp.x != 0.0 {
+        let there = previous + params.offset.xyz;
+        out.previous = params.previous_view_proj * vec4(motion_warp(there, params.previous_warp), 1.0);
+    } else {
+        out.previous = params.previous * vec4(previous, 1.0);
+    }
     return out;
 }
 

@@ -178,7 +178,7 @@ impl Run {
             Some(PEAK),
         );
         queue.submit([encoder.finish()]);
-        self.camera.reproject = Some(Mat4::IDENTITY);
+        self.camera.reproject = Some((Mat4::IDENTITY, bytemuck::Zeroable::zeroed()));
         made
     }
 }
