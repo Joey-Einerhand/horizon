@@ -25,7 +25,7 @@ impl Celestial {
                 layout: Some(layout),
                 vertex: wgpu::VertexState {
                     module: shader,
-                    entry_point: Some("vs_entity"),
+                    entry_point: Some("vs_sky"),
                     compilation_options: Default::default(),
                     buffers: vertex,
                 },

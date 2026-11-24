@@ -137,10 +137,14 @@ fn native_colored_light(pos: vec3<f32>) -> vec3<f32> {
 }
 fn entity_vertex(position: vec3<f32>, uv: vec2<f32>,
     overlay: u32, color: vec4<f32>, light: vec4<u32>, normal: vec4<f32>) -> Out {
+    return world_vertex(true, position, uv, overlay, color, light, normal);
+}
+// `bent`: whether the world warp moves the vertex. The sky box and celestial bodies (`vs_sky`)
+// sit at infinity and stay flat; clouds, lightning and everything else in the world bend.
+fn world_vertex(bent: bool, position: vec3<f32>, uv: vec2<f32>,
+    overlay: u32, color: vec4<f32>, light: vec4<u32>, normal: vec4<f32>) -> Out {
     var out: Out;
-    // Sky geometry (clouds, celestial bodies: overlays 2 to 4) stays flat, as it stays unfogged.
-    let sky = overlay >= 2u && overlay <= 4u;
-    out.clip = globals.view_proj * vec4(select(world_warp_point(position), position, sky), 1.0);
+    out.clip = globals.view_proj * vec4(select(position, world_warp_point(position), bent), 1.0);
     out.proj = vec4(out.clip.xy * 0.5 + out.clip.w * 0.5, out.clip.zw);
     out.uv = uv;
     let l = vec2(max(f32(light.y), dynamic_block_light(position)), f32(light.x));
@@ -184,6 +188,15 @@ fn entity_vertex(position: vec3<f32>, uv: vec2<f32>,
     @location(2) overlay: u32, @location(3) color: vec4<f32>, @location(4) light: vec4<u32>,
     @location(5) normal: vec4<f32>, @location(6) glint_uv: vec2<f32>) -> Out {
     var out = entity_vertex(position, uv, overlay & 0xffffu, color, light, normal);
+    out.glint_uv = glint_uv;
+    out.tier = (overlay >> 16u) & 0xffu;
+    return out;
+}
+// The sky box and celestial bodies: `vs_entity`, unbent by the world warp.
+@vertex fn vs_sky(@location(0) position: vec3<f32>, @location(1) uv: vec2<f32>,
+    @location(2) overlay: u32, @location(3) color: vec4<f32>, @location(4) light: vec4<u32>,
+    @location(5) normal: vec4<f32>, @location(6) glint_uv: vec2<f32>) -> Out {
+    var out = world_vertex(false, position, uv, overlay & 0xffffu, color, light, normal);
     out.glint_uv = glint_uv;
     out.tier = (overlay >> 16u) & 0xffu;
     return out;
