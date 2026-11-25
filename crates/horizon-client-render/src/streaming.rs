@@ -2538,6 +2538,11 @@ impl Streaming {
                 // updates the entry). Without it, scheduling at render distance 32
                 // took most of the thread that runs it while the world loaded.
                 let waiting: std::cell::RefCell<FxHashMap<(i32, i32), bool>> = Default::default();
+                // DIAG: why decoration doesn't start (temporary).
+                let mut diag = [0usize; 5];
+                let mut diag_missing: Option<((i32, i32), (i32, i32))> = None;
+                let mut diag_blocked: Option<(i32, i32)> = None;
+                diag[0] = wanted.len();
                 while let Some(std::cmp::Reverse((_, x, z))) = wanted.pop() {
                     if self.decorating >= workers * 2 {
                         break;
@@ -2550,6 +2555,8 @@ impl Streaming {
                         waiting.borrow_mut().insert((nx, nz), known);
                         known
                     }) {
+                        diag[1] += 1;
+                        diag_blocked.get_or_insert((x, z));
                         continue;
                     }
                     // On a periodic level a neighbour across the seam is its stored column:
@@ -2565,6 +2572,7 @@ impl Streaming {
                     // (worlds saved before proto chunks were saved get here: their
                     // final chunks' neighbours are generated again).
                     if keys.iter().any(|k| self.decorating_finals.contains(k)) {
+                        diag[2] += 1;
                         continue;
                     }
                     let has_final = keys.iter().any(|k| world.chunks.contains_key(k));
@@ -2576,6 +2584,14 @@ impl Streaming {
                     if !keys.iter().all(|k| {
                         world.chunks.contains_key(k) || matches!(self.protos.get(k), Some(Some(_)))
                     }) {
+                        diag[3] += 1;
+                        if diag_missing.is_none() {
+                            let k = keys.iter().find(|k| {
+                                !(world.chunks.contains_key(k)
+                                    || matches!(self.protos.get(k), Some(Some(_))))
+                            });
+                            diag_missing = k.map(|k| ((x, z), *k));
+                        }
                         continue;
                     }
                     let finals: Vec<(usize, Chunk)> = keys
@@ -2598,6 +2614,20 @@ impl Streaming {
                     self.decorating_finals
                         .extend(finals.iter().map(|(i, _)| keys[*i]));
                     self.submit(Some((x, z)), 1, Job::Decorate(x, z, region, finals));
+                    diag[4] += 1;
+                }
+                {
+                    static LAST: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_or(0, |d| d.as_secs());
+                    if LAST.swap(now, std::sync::atomic::Ordering::Relaxed) != now {
+                        log::info!(
+                            "DIAG decorate: wanted {} blocked {} finals_busy {} missing {} submitted {}; blocked e.g. {:?}; missing e.g. {:?}; period {}; protos {}; generating {}",
+                            diag[0], diag[1], diag[2], diag[3], diag[4], diag_blocked, diag_missing,
+                            self.period_x, self.protos.len(), self.generating.len()
+                        );
+                    }
                 }
             }
         }
