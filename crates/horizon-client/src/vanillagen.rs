@@ -999,10 +999,17 @@ impl ChunkGenerator for VanillaTerrain {
             std::sync::atomic::Ordering::Relaxed,
         );
         match worker.generate_proto(ChunkPos::new(x, z)) {
-            Ok(chunk) => Box::new(VanillaProto::Ready(Box::new(ResidentProto {
-                terrain_chunk: chunk,
-                saved_biomes: None,
-            }))),
+            Ok(mut chunk) => {
+                // A mod's shape goes on the terrain before anything reads it (far terrain samples
+                // proto chunks) or decorates it; `finish` lays it again over what features wrote.
+                if let Some(shaper) = self.generator.chunk_shaper() {
+                    chunk.shape(&**shaper);
+                }
+                Box::new(VanillaProto::Ready(Box::new(ResidentProto {
+                    terrain_chunk: chunk,
+                    saved_biomes: None,
+                })))
+            }
             Err(e) => {
                 log::warn!("Horizon: generating chunk {x} {z} failed: {e}");
                 Box::new(VanillaProto::Failed(x, z))
