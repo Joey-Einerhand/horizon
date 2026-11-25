@@ -29,9 +29,11 @@ impl Hub {
             .filter_map(|i| {
                 let g = &self.guests[i];
                 if self.watches(g) {
-                    g.sent_chunks
-                        .contains(&self.in_chart(g, key))
-                        .then_some((i, None, &g.sent_chunks))
+                    g.sent_chunks.contains(&self.in_chart(g, key)).then_some((
+                        i,
+                        None,
+                        &g.sent_chunks,
+                    ))
                 } else if viewed {
                     self.view_here(g)
                         .filter(|v| v.sent.contains(&key))

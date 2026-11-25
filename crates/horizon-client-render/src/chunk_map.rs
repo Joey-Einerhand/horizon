@@ -191,7 +191,10 @@ impl ChunkMap {
     /// Set it on an empty map, before any column arrives. A period under 3 chunks is refused
     /// (the neighbour counts would meet themselves).
     pub fn set_period_x(&mut self, period: Option<i32>) {
-        debug_assert!(self.columns.is_empty(), "the period of a map in use changed");
+        debug_assert!(
+            self.columns.is_empty(),
+            "the period of a map in use changed"
+        );
         self.period_x = period.filter(|p| *p >= 3).unwrap_or(0);
     }
     /// The period along X in chunks, when this is a periodic level's map.
@@ -459,7 +462,11 @@ impl ChunkMap {
         Some(slice.copied())
     }
     pub fn insert(&mut self, key: Key, mut chunk: Arc<Chunk>) -> Option<Arc<Chunk>> {
-        debug_assert_eq!(key, self.canonical(key), "a periodic map was handed an alias");
+        debug_assert_eq!(
+            key,
+            self.canonical(key),
+            "a periodic map was handed an alias"
+        );
         let key = self.canonical(key);
         self.touch(key);
         let limits = chunk
@@ -1534,8 +1541,13 @@ mod tests {
             }
         }
         assert_eq!(map.len(), 24);
-        assert!(map.contains_key(&(8, 0)) && map.contains_key(&(-1, 0)) && map.contains_key(&(-17, 1)));
-        assert!(std::ptr::eq(&**map.get(&(9, 0)).unwrap(), &**map.get(&(1, 0)).unwrap()));
+        assert!(
+            map.contains_key(&(8, 0)) && map.contains_key(&(-1, 0)) && map.contains_key(&(-17, 1))
+        );
+        assert!(std::ptr::eq(
+            &**map.get(&(9, 0)).unwrap(),
+            &**map.get(&(1, 0)).unwrap()
+        ));
         // Column 0's neighbours west are column 7's: all nine resident.
         assert!(map.surrounded((0, 0)) && map.surrounded((8, 0)) && map.surrounded((7, 0)));
         map.mutate_chunk((16, 0), |c| Arc::make_mut(c).fresh = true);

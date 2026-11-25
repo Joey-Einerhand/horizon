@@ -108,7 +108,8 @@ impl Chart {
         Ok(Some(packet.encode()))
     }
     fn enter(&self, dimension: &str) {
-        self.period.store(level_period(dimension), Ordering::Relaxed);
+        self.period
+            .store(level_period(dimension), Ordering::Relaxed);
     }
 }
 
@@ -277,13 +278,26 @@ mod tests {
         // The player walked a little past the seam: block 6 is the one 16390 names.
         let p = moved(
             &chart(16388),
-            Clientbound::BlockUpdate(BlockUpdate { pos: [6, 64, 2], state: 1 }),
+            Clientbound::BlockUpdate(BlockUpdate {
+                pos: [6, 64, 2],
+                state: 1,
+            }),
         );
         assert!(matches!(p, Clientbound::BlockUpdate(b) if b.pos == [16390, 64, 2]));
         // Near the stored copy nothing moves, nor across the seam the other way.
-        let p = moved(&chart(3), Clientbound::BlockUpdate(BlockUpdate { pos: [16380, 64, 2], state: 1 }));
+        let p = moved(
+            &chart(3),
+            Clientbound::BlockUpdate(BlockUpdate {
+                pos: [16380, 64, 2],
+                state: 1,
+            }),
+        );
         assert!(matches!(p, Clientbound::BlockUpdate(b) if b.pos == [-4, 64, 2]));
-        let body = Clientbound::BlockUpdate(BlockUpdate { pos: [10, 64, 2], state: 1 }).encode();
+        let body = Clientbound::BlockUpdate(BlockUpdate {
+            pos: [10, 64, 2],
+            state: 1,
+        })
+        .encode();
         assert_eq!(chart(3).rewrite(&body).unwrap(), None);
     }
 
@@ -341,7 +355,11 @@ mod tests {
         let chart = Chart::default();
         chart.enter("chart_test:flat");
         chart.set_viewer(16388);
-        let body = Clientbound::BlockUpdate(BlockUpdate { pos: [6, 64, 2], state: 1 }).encode();
+        let body = Clientbound::BlockUpdate(BlockUpdate {
+            pos: [6, 64, 2],
+            state: 1,
+        })
+        .encode();
         assert_eq!(chart.rewrite(&body).unwrap(), None);
     }
 }

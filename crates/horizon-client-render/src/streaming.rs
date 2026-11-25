@@ -3731,7 +3731,11 @@ impl Ranges<'_> {
     /// periodic level the ones a period either side (every area is narrower than half one).
     /// The stored column of column `x`: itself, or on a periodic level its image in `0..period`.
     fn stored(&self, x: i32) -> i32 {
-        if self.period == 0 { x } else { x.rem_euclid(self.period) }
+        if self.period == 0 {
+            x
+        } else {
+            x.rem_euclid(self.period)
+        }
     }
     fn images(&self, x: i32) -> impl Iterator<Item = i32> {
         let p = self.period;
@@ -3774,8 +3778,9 @@ impl Ranges<'_> {
     /// The columns meshed for drawing: those vanilla draws around the
     /// player (`in_view_distance`), and forced ones.
     fn in_view(&self, x: i32, z: i32) -> bool {
-        self.images(x)
-            .any(|x| in_view_distance(self.center, self.radius, x, z) || self.forced.contains(&(x, z)))
+        self.images(x).any(|x| {
+            in_view_distance(self.center, self.radius, x, z) || self.forced.contains(&(x, z))
+        })
     }
     fn in_main_range(&self, x: i32, z: i32, margin: i32) -> bool {
         let r = i64::from(self.radius + margin);

@@ -691,10 +691,18 @@ impl ConnWriter {
     }
     /// The body moved to this player's chart when its level repeats, the body itself otherwise.
     fn charted<'a>(&self, body: &'a [u8]) -> Result<std::borrow::Cow<'a, [u8]>> {
-        Ok(match self.chart.as_deref().map(|c| c.rewrite(body)).transpose()?.flatten() {
-            Some(moved) => std::borrow::Cow::Owned(moved),
-            None => std::borrow::Cow::Borrowed(body),
-        })
+        Ok(
+            match self
+                .chart
+                .as_deref()
+                .map(|c| c.rewrite(body))
+                .transpose()?
+                .flatten()
+            {
+                Some(moved) => std::borrow::Cow::Owned(moved),
+                None => std::borrow::Cow::Borrowed(body),
+            },
+        )
     }
     /// The packet bodies this connection's client takes for one body, in order: renumbered for a client of an
     /// older release ([`Connection::serve_older`]), none when it has no such packet, and what the packet brought

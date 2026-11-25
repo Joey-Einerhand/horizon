@@ -540,7 +540,11 @@ impl ChunkTickets {
                 // Tickets with no random tick of their own still get a box, an
                 // empty one: `None` is for a game with no tickets at all.
                 let bounds = random_bounds(&imaged).unwrap_or((1, 1, 0, 0));
-                Levels(map, Some(clamp_bounds(bounds, self.period_x)), self.period_x)
+                Levels(
+                    map,
+                    Some(clamp_bounds(bounds, self.period_x)),
+                    self.period_x,
+                )
             }
             None => Levels(None, None, 0),
         };
@@ -925,7 +929,9 @@ mod tests {
         assert!(!levels.entity_ticking(512, 0));
         let mut ticking = Vec::new();
         assert!(levels.random_ticking_sorted(&mut ticking));
-        assert!(ticking.contains(&(1023, 0)) && ticking.iter().all(|&(x, _)| (0..1024).contains(&x)));
+        assert!(
+            ticking.contains(&(1023, 0)) && ticking.iter().all(|&(x, _)| (0..1024).contains(&x))
+        );
         let (x0, _, x1, _) = levels.random_tick_bounds().unwrap();
         assert!(x0 >= 0 && x1 < 1024);
     }
@@ -1823,8 +1829,10 @@ fn with_images(s: &Sources, period: i32) -> std::borrow::Cow<'_, Sources> {
         out.portal.extend(images(x).map(|i| ((i, z), level)));
     }
     for t in &s.viewed {
-        out.viewed
-            .extend(images(t.center.0).map(|i| ViewedTicket { center: (i, t.center.1), ..*t }));
+        out.viewed.extend(images(t.center.0).map(|i| ViewedTicket {
+            center: (i, t.center.1),
+            ..*t
+        }));
     }
     std::borrow::Cow::Owned(out)
 }
