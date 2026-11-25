@@ -360,6 +360,11 @@ fn take_tracking(
 }
 
 pub struct Hub {
+    /// The period along X, in chunks, of the level in place (0: it doesn't repeat), which the
+    /// game sets each tick. A player's view and sent chunks are in the player's own chart
+    /// (`horizon_protocol::chart`); a chunk the level names is that player's copy of it
+    /// ([`Self::in_chart`]).
+    pub period_x: i32,
     packet_drain: Option<PacketDrain>,
     deferred_payloads: std::collections::HashMap<Option<u32>, DeferredPayload>,
     /// Main-thread world identity used to bind typed network-context player handles.
@@ -716,6 +721,16 @@ fn entity_type(
 
 /// ChunkTrackingView.contains: the chunks a player at (cx, cz) with view
 /// distance `r` is sent (isWithinDistance with the neighbours' buffer).
+/// Chunk `key` at its copy nearest chunk column `viewer` on a level of period `period` chunks
+/// (0: none).
+pub fn in_chart(period: i32, viewer: i32, key: (i32, i32)) -> (i32, i32) {
+    if period == 0 {
+        return key;
+    }
+    let d = viewer - key.0;
+    (key.0 + (d + period / 2).div_euclid(period) * period, key.1)
+}
+
 pub(super) fn tracked(cx: i32, cz: i32, r: i32, x: i32, z: i32) -> bool {
     let dx = i64::from(((x - cx).abs() - 2).max(0));
     let dz = i64::from(((z - cz).abs() - 2).max(0));
@@ -892,6 +907,7 @@ impl Hub {
             native_menu_events: Vec::new(),
             chunk_watches: ChunkWatchLog::default(),
             terrain: None,
+            period_x: 0,
             packet_drain: None,
             deferred_payloads: Default::default(),
             pending_kicks: Vec::new(),
@@ -1115,6 +1131,11 @@ impl Hub {
     /// the held ones, which look at it without being part of it.
     pub fn watches(&self, g: &Guest) -> bool {
         g.watches_level(&self.config.dimension)
+    }
+    /// Chunk `key` of the level in place as player `g` holds it: on a periodic level the copy
+    /// nearest the player's view, which is where its view and sent chunks are kept.
+    pub fn in_chart(&self, g: &Guest, key: (i32, i32)) -> (i32, i32) {
+        in_chart(self.period_x, g.view_chunk().0, key)
     }
     /// The chunk under each player the level in place has to keep loaded: the players placed in
     /// it and the held ones, which are sent its chunks too ([`Self::watches`]), whose `loads`

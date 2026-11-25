@@ -338,6 +338,7 @@ impl WorldRequest {
         drop(streaming_step);
         streaming.radius = settings.render_distance;
         let mut world = Game::world_for_mods(res.facts().air, level.seed);
+        world.set_period_x(super::periodic::level_period_chunks(dim.id(), level.seed));
         world.attachments = save.load_attachments();
         world.shape = shape;
         world.fast_lava = horizon_world::dimension_type::DimensionFacts::of_level(

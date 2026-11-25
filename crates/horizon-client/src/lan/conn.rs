@@ -312,6 +312,9 @@ pub struct PlayerSender {
     /// The host and port the client typed in its handshake ([`typed_address`]), None for a
     /// connection that sent none.
     pub connect: Option<(Arc<str>, u16)>,
+    /// Where the player stands in a periodic level, read by its network thread to send it the
+    /// level's copy nearest it (`horizon_protocol::chart`); the game sets it each tick.
+    pub chart: Arc<horizon_protocol::chart::Chart>,
 }
 #[derive(Clone)]
 enum To {
@@ -386,6 +389,7 @@ impl PlayerSender {
             menu_extra_rev: 0,
             packet_counts: Arc::default(),
             connect: None,
+            chart: Arc::default(),
         }
     }
     #[cfg(test)]
@@ -426,6 +430,7 @@ impl PlayerSender {
             menu_extra_rev: 0,
             packet_counts: Arc::default(),
             connect: None,
+            chart: Arc::default(),
         };
         (sender, move || inspect.queued_contents())
     }
@@ -445,6 +450,7 @@ impl PlayerSender {
             menu_extra_rev: 0,
             packet_counts: Arc::default(),
             connect: None,
+            chart: Arc::default(),
         }
     }
     /// The bytes received from and sent to the client on the wire so far.
@@ -2274,7 +2280,9 @@ fn play(
         menu_extra_rev: parts.channels.menu_extra_rev.revision(),
         packet_counts: packet_counts.clone(),
         connect: typed,
+        chart: Arc::default(),
     };
+    let chart = sender.chart.clone();
     let required_pack = shared
         .config
         .resource_pack
@@ -2322,7 +2330,8 @@ fn play(
         session.closed();
         return;
     }
-    let (socket, reader, writer) = c.detach();
+    let (socket, reader, mut writer) = c.detach();
+    writer.set_chart(chart);
     io_pool::adopt(socket, (reader, writer), outbox, session, READ_TIMEOUT);
 }
 
@@ -2757,7 +2766,7 @@ pub(super) fn frame_body(
     // Renumbered first for a client of an older release; one with no such packet gets nothing, and what a packet
     // brought with it (a boat's wood, an experience orb's value) follows it.
     // A client of this release takes the body as it is: no allocation per packet.
-    if !writer.serves_older_client() {
+    if writer.for_client_is_plain() {
         return frame_one(writer, body, out);
     }
     for body in writer.for_client(body)? {
@@ -4420,6 +4429,7 @@ mod outgoing_budget_tests {
             menu_extra_rev: 0,
             packet_counts: Arc::default(),
             connect: None,
+            chart: Arc::default(),
         }
     }
     #[test]

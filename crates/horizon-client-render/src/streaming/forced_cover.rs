@@ -173,6 +173,7 @@ mod tests {
                 cover: None,
                 forced_cover,
                 band: None,
+                period: 0,
             };
             let (scan, map) = (ranges(None), ranges(Some(made)));
             let span = spread + 10;
@@ -255,6 +256,7 @@ mod tests {
                     cover: None,
                     forced_cover,
                     band: None,
+                    period: 0,
                 };
                 let map = ranges(Some(made));
                 // Keep every sampled column and reach; reuse its nearest forced chunk below.
@@ -343,6 +345,7 @@ mod tests {
                     cover: None,
                     forced_cover,
                     band: None,
+                    period: 0,
                 };
                 let spread = forced
                     .iter()

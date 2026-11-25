@@ -3223,6 +3223,7 @@ impl Game<'_> {
             self.is_logical_server()
                 && mod_api::__private::listened(mod_api::HookId::ChunkTicketLevelUpdated),
         );
+        self.tickets.set_period_x(self.world.chunks.period_x());
         self.tickets.update(sources);
         self.run_chunk_ticket_level_updates();
     }

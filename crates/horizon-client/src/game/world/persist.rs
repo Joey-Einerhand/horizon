@@ -1781,7 +1781,7 @@ impl Game<'_> {
         // Every kind in `entity_lists!` saves itself (`Entity::save_nbt`).
         self.save_every_entity(keys, &mut roots);
         if let Some(d) = self.dragon.as_ref()
-            && keys.contains(&chunk_of(d.position))
+            && keys.contains(&self.world.chunks.canonical(chunk_of(d.position)))
         {
             let raw = anon_raw(&self.persist, "minecraft:ender_dragon", d.position);
             let uuid = saved_uuid(&self.persist, d.id);
@@ -1790,25 +1790,25 @@ impl Game<'_> {
             let mut tag = with_raw(d.to_nbt(uuid, raw.as_ref()), self.persist.raw.get(&d.id));
             write_attachments(&mut tag, d.id, &self.entity_attachments);
             roots
-                .entry(chunk_of(d.position))
+                .entry(self.world.chunks.canonical(chunk_of(d.position)))
                 .or_default()
                 .push((d.id, d.join_seq(), tag));
         }
         for c in &self.crystals {
-            if keys.contains(&chunk_of(c.position)) {
+            if keys.contains(&self.world.chunks.canonical(chunk_of(c.position))) {
                 let raw = anon_raw(&self.persist, "minecraft:end_crystal", c.position);
                 let uuid = saved_uuid(&self.persist, c.id);
                 let mut tag = with_raw(c.to_nbt(uuid, raw.as_ref()), self.persist.raw.get(&c.id));
                 write_attachments(&mut tag, c.id, &self.entity_attachments);
                 roots
-                    .entry(chunk_of(c.position))
+                    .entry(self.world.chunks.canonical(chunk_of(c.position)))
                     .or_default()
                     .push((c.id, c.join_seq(), tag));
             }
         }
         for s in &self.ominous_spawners {
             let at = Vec3::new(s.position[0], s.position[1], s.position[2]);
-            if keys.contains(&chunk_of(at)) {
+            if keys.contains(&self.world.chunks.canonical(chunk_of(at))) {
                 let mut tag = entity_nbt::ominous_item_spawner_to_nbt(
                     &s.item,
                     at,
@@ -1818,7 +1818,7 @@ impl Game<'_> {
                 );
                 write_attachments(&mut tag, s.id, &self.entity_attachments);
                 roots
-                    .entry(chunk_of(at))
+                    .entry(self.world.chunks.canonical(chunk_of(at)))
                     .or_default()
                     .push((s.id, s.join_seq(), tag));
             }
@@ -1830,7 +1830,7 @@ impl Game<'_> {
                 (lo[1] + hi[1]) / 2.0,
                 (lo[2] + hi[2]) / 2.0,
             );
-            if keys.contains(&chunk_of(at)) {
+            if keys.contains(&self.world.chunks.canonical(chunk_of(at))) {
                 let uuid = self
                     .persist
                     .uuids
@@ -1840,13 +1840,13 @@ impl Game<'_> {
                 let mut tag = entity_nbt::item_frame_to_nbt(f, uuid, self.persist.raw.get(&f.id));
                 write_attachments(&mut tag, f.id, &self.entity_attachments);
                 roots
-                    .entry(chunk_of(at))
+                    .entry(self.world.chunks.canonical(chunk_of(at)))
                     .or_default()
                     .push((f.id, f.join_seq(), tag));
             }
         }
         for c in &self.cushions {
-            if keys.contains(&chunk_of(c.position)) {
+            if keys.contains(&self.world.chunks.canonical(chunk_of(c.position))) {
                 let uuid = self
                     .persist
                     .uuids
@@ -1856,14 +1856,14 @@ impl Game<'_> {
                 let mut tag = entity_nbt::cushion_to_nbt(c, uuid, self.persist.raw.get(&c.id));
                 write_attachments(&mut tag, c.id, &self.entity_attachments);
                 roots
-                    .entry(chunk_of(c.position))
+                    .entry(self.world.chunks.canonical(chunk_of(c.position)))
                     .or_default()
                     .push((c.id, c.join_seq(), tag));
             }
         }
         for p in &self.paintings {
             let at = painting_center(p);
-            if keys.contains(&chunk_of(at)) {
+            if keys.contains(&self.world.chunks.canonical(chunk_of(at))) {
                 let uuid = self
                     .persist
                     .uuids
@@ -1873,14 +1873,14 @@ impl Game<'_> {
                 let mut tag = entity_nbt::painting_to_nbt(p, uuid, self.persist.raw.get(&p.id));
                 write_attachments(&mut tag, p.id, &self.entity_attachments);
                 roots
-                    .entry(chunk_of(at))
+                    .entry(self.world.chunks.canonical(chunk_of(at)))
                     .or_default()
                     .push((p.id, p.join_seq(), tag));
             }
         }
         for f in &self.fangs.list {
             let at = Vec3::new(f.pos[0], f.pos[1], f.pos[2]);
-            if keys.contains(&chunk_of(at)) {
+            if keys.contains(&self.world.chunks.canonical(chunk_of(at))) {
                 let uuid = self
                     .persist
                     .uuids
@@ -1890,7 +1890,7 @@ impl Game<'_> {
                 let mut tag = self.fangs_to_nbt(f, uuid);
                 write_attachments(&mut tag, f.id, &self.entity_attachments);
                 roots
-                    .entry(chunk_of(at))
+                    .entry(self.world.chunks.canonical(chunk_of(at)))
                     .or_default()
                     .push((f.id, f.join_seq(), tag));
             }
@@ -1900,7 +1900,7 @@ impl Game<'_> {
         // is not written.
         for c in &self.breath_clouds {
             let at = Vec3::new(c.at[0], c.at[1], c.at[2]);
-            if c.potion.is_none() || !keys.contains(&chunk_of(at)) {
+            if c.potion.is_none() || !keys.contains(&self.world.chunks.canonical(chunk_of(at))) {
                 continue;
             }
             let uuid = self
@@ -1912,13 +1912,13 @@ impl Game<'_> {
             let mut tag = super::potions::potion_cloud_to_nbt(c, uuid, self.persist.raw.get(&c.id));
             write_attachments(&mut tag, c.id, &self.entity_attachments);
             roots
-                .entry(chunk_of(at))
+                .entry(self.world.chunks.canonical(chunk_of(at)))
                 .or_default()
                 .push((c.id, c.join_seq(), tag));
         }
         for o in &self.others {
             // EntityType.noSave: Entity.getEncodeId is null, so the chunk never stores it.
-            if keys.contains(&chunk_of(o.position)) && o.kind.as_str() != "minecraft:leash_knot" {
+            if keys.contains(&self.world.chunks.canonical(chunk_of(o.position))) && o.kind.as_str() != "minecraft:leash_knot" {
                 let uuid = self
                     .persist
                     .uuids
@@ -1935,7 +1935,7 @@ impl Game<'_> {
                     tag
                 };
                 roots
-                    .entry(chunk_of(o.position))
+                    .entry(self.world.chunks.canonical(chunk_of(o.position)))
                     .or_default()
                     .push((o.id, o.join_seq(), tag));
             }
@@ -1948,7 +1948,7 @@ impl Game<'_> {
         let orb_entries: HashMap<_, _> = self
             .orbs
             .iter()
-            .filter(|orb| keys.contains(&chunk_of(orb.position)))
+            .filter(|orb| keys.contains(&self.world.chunks.canonical(chunk_of(orb.position))))
             .map(|orb| (orb.join, orb.section_order))
             .collect();
         {
@@ -2204,9 +2204,9 @@ impl Game<'_> {
             && m.extra
                 .mount
                 .is_none_or(|v| self.boat_object(v).is_none() && self.cart_object(v).is_none())
-            && keys.contains(&chunk_of(m.position))
+            && keys.contains(&self.world.chunks.canonical(chunk_of(m.position)))
             && !m.removed;
-        saves.then(|| (chunk_of(self.mobs[i].position), self.mob_tree_nbt(i)))
+        saves.then(|| (self.world.chunks.canonical(chunk_of(self.mobs[i].position)), self.mob_tree_nbt(i)))
     }
     pub(super) fn save_item(
         &mut self,
@@ -2214,7 +2214,7 @@ impl Game<'_> {
         keys: &HashSet<ChunkKey>,
     ) -> Option<(ChunkKey, Tag)> {
         let at = self.dropped[i].position;
-        keys.contains(&chunk_of(at)).then(|| {
+        keys.contains(&self.world.chunks.canonical(chunk_of(at))).then(|| {
             let id = self.dropped[i].id;
             let uuid = self.uuid_for(id);
             let mut tag = entity_nbt::item_entity_to_nbt_with_items(
@@ -2224,7 +2224,7 @@ impl Game<'_> {
                 self.items(),
             );
             self.save_portal_cooldown(id, &mut tag);
-            (chunk_of(at), tag)
+            (self.world.chunks.canonical(chunk_of(at)), tag)
         })
     }
     pub(super) fn save_orb(
@@ -2233,7 +2233,7 @@ impl Game<'_> {
         keys: &HashSet<ChunkKey>,
     ) -> Option<(ChunkKey, Tag)> {
         let o = &self.orbs[i];
-        keys.contains(&chunk_of(o.position)).then(|| {
+        keys.contains(&self.world.chunks.canonical(chunk_of(o.position))).then(|| {
             let raw = anon_raw(&self.persist, "minecraft:experience_orb", o.position);
             let uuid = saved_uuid(&self.persist, o.id);
             let mut tag = with_raw(
@@ -2241,7 +2241,7 @@ impl Game<'_> {
                 self.persist.raw.get(&o.id),
             );
             self.save_portal_cooldown(o.id, &mut tag);
-            (chunk_of(o.position), tag)
+            (self.world.chunks.canonical(chunk_of(o.position)), tag)
         })
     }
     /// `Projectile.addAdditionalSaveData`'s `Owner`: the reference the projectile was loaded
@@ -2261,7 +2261,7 @@ impl Game<'_> {
         keys: &HashSet<ChunkKey>,
     ) -> Option<(ChunkKey, Tag)> {
         let p = &self.creatures.projectiles[i];
-        if !keys.contains(&chunk_of(p.position)) || !entity_nbt::saved_with_chunk(p) {
+        if !keys.contains(&self.world.chunks.canonical(chunk_of(p.position))) || !entity_nbt::saved_with_chunk(p) {
             return None;
         }
         let owner = self.projectile_owner_uuid(i);
@@ -2294,7 +2294,7 @@ impl Game<'_> {
             map.insert("HasBeenShot".into(), shot);
         }
         self.save_projectile_portal_cooldown(p, &mut tag);
-        Some((chunk_of(p.position), tag))
+        Some((self.world.chunks.canonical(chunk_of(p.position)), tag))
     }
     /// The UUID a save writes for a reference to `who`, as `mob_to_nbt`'s
     /// `angry_at` does: the bridge's `who_uuid` over `EntityMemory::uuid_of`,
@@ -2309,7 +2309,7 @@ impl Game<'_> {
         keys: &HashSet<ChunkKey>,
     ) -> Option<(ChunkKey, Tag)> {
         let f = &self.falling[i];
-        if !keys.contains(&chunk_of(f.position)) {
+        if !keys.contains(&self.world.chunks.canonical(chunk_of(f.position))) {
             return None;
         }
         let raw = match &f.saved {
@@ -2333,7 +2333,7 @@ impl Game<'_> {
         if let Tag::Compound(fields) = &mut tag {
             fields.insert("PortalCooldown".into(), Tag::Int(f.portal.cooldown));
         }
-        Some((chunk_of(f.position), tag))
+        Some((self.world.chunks.canonical(chunk_of(f.position)), tag))
     }
     pub(super) fn save_rocket(
         &mut self,
@@ -2341,11 +2341,11 @@ impl Game<'_> {
         keys: &HashSet<ChunkKey>,
     ) -> Option<(ChunkKey, Tag)> {
         let (id, at) = (self.rockets[i].id, self.rockets[i].position);
-        keys.contains(&chunk_of(at)).then(|| {
+        keys.contains(&self.world.chunks.canonical(chunk_of(at))).then(|| {
             let uuid = self.uuid_for(id);
             let tag =
                 self.rockets[i].to_nbt(uuid, self.level.player_uuid, self.persist.raw.get(&id));
-            (chunk_of(at), tag)
+            (self.world.chunks.canonical(chunk_of(at)), tag)
         })
     }
     pub(super) fn save_trident(
@@ -2354,10 +2354,10 @@ impl Game<'_> {
         keys: &HashSet<ChunkKey>,
     ) -> Option<(ChunkKey, Tag)> {
         let (id, at) = (self.tridents[i].id, self.tridents[i].position);
-        keys.contains(&chunk_of(at)).then(|| {
+        keys.contains(&self.world.chunks.canonical(chunk_of(at))).then(|| {
             let (uuid, reg) = (self.uuid_for(id), self.pack.assets.registry);
             let tag = self.tridents[i].to_nbt(uuid, reg, self.persist.raw.get(&id));
-            (chunk_of(at), tag)
+            (self.world.chunks.canonical(chunk_of(at)), tag)
         })
     }
     pub(super) fn save_tnt(
@@ -2366,8 +2366,8 @@ impl Game<'_> {
         keys: &HashSet<ChunkKey>,
     ) -> Option<(ChunkKey, Tag)> {
         let at = self.tnts[i].position;
-        keys.contains(&chunk_of(at))
-            .then(|| (chunk_of(at), self.tnt_nbt(i)))
+        keys.contains(&self.world.chunks.canonical(chunk_of(at)))
+            .then(|| (self.world.chunks.canonical(chunk_of(at)), self.tnt_nbt(i)))
     }
     pub(super) fn save_boat(
         &mut self,
@@ -2376,7 +2376,7 @@ impl Game<'_> {
     ) -> Option<(ChunkKey, Tag)> {
         let b = &self.boats[i];
         let (id, at) = (b.id, b.position);
-        if !keys.contains(&chunk_of(at)) {
+        if !keys.contains(&self.world.chunks.canonical(chunk_of(at))) {
             return None;
         }
         let uuid = self.saved_uuid_or_random(id);
@@ -2385,7 +2385,7 @@ impl Game<'_> {
         // AbstractBoat.addAdditionalSaveData: the lead's holder.
         self.write_boat_leash(&mut tag, i);
         self.save_portal_cooldown(id, &mut tag);
-        Some((chunk_of(at), tag))
+        Some((self.world.chunks.canonical(chunk_of(at)), tag))
     }
     pub(super) fn save_cart(
         &mut self,
@@ -2393,14 +2393,14 @@ impl Game<'_> {
         keys: &HashSet<ChunkKey>,
     ) -> Option<(ChunkKey, Tag)> {
         let (id, at) = (self.carts[i].id, self.carts[i].position);
-        if !keys.contains(&chunk_of(at)) {
+        if !keys.contains(&self.world.chunks.canonical(chunk_of(at))) {
             return None;
         }
         let uuid = self.saved_uuid_or_random(id);
         let mut tag = self.carts[i].to_nbt(uuid, self.persist.raw.get(&id));
         self.put_mob_passengers(&mut tag, id);
         self.save_portal_cooldown(id, &mut tag);
-        Some((chunk_of(at), tag))
+        Some((self.world.chunks.canonical(chunk_of(at)), tag))
     }
     pub(super) fn save_armor_stand(
         &mut self,
@@ -2408,11 +2408,11 @@ impl Game<'_> {
         keys: &HashSet<ChunkKey>,
     ) -> Option<(ChunkKey, Tag)> {
         let a = &self.armor_stands[i];
-        keys.contains(&chunk_of(a.position)).then(|| {
+        keys.contains(&self.world.chunks.canonical(chunk_of(a.position))).then(|| {
             let uuid = self.saved_uuid_or_random(a.id);
             let mut tag = entity_nbt::armor_stand_to_nbt(a, uuid, self.persist.raw.get(&a.id));
             self.save_portal_cooldown(a.id, &mut tag);
-            (chunk_of(a.position), tag)
+            (self.world.chunks.canonical(chunk_of(a.position)), tag)
         })
     }
     /// The UUID kept for `id`, or a new one that is not remembered (what a

@@ -9,7 +9,10 @@ impl Game<'_> {
     /// each family keeps (a ridden boat, an unsaved projectile) stays.
     /// `keys` are the chunks leaving.
     pub(super) fn unload_removed_entities(&mut self, keys: &HashSet<(i32, i32)>) {
-        let gone = |p: Vec3| keys.contains(&chunk_of(p));
+        // A periodic level's entities are kept by their stored chunk, whichever copy they are in.
+        let period = self.world.chunks.period_x();
+        let stored = move |(x, z): (i32, i32)| (period.map_or(x, |p| x.rem_euclid(p)), z);
+        let gone = |p: Vec3| keys.contains(&stored(chunk_of(p)));
         let mut removed: Vec<u32> = Vec::new();
         let riding = self.riding;
         self.boats.retain(|b| {
@@ -196,7 +199,7 @@ impl Game<'_> {
         });
         self.persist
             .anon
-            .retain(|_, (at, _)| !keys.contains(&chunk_of(*at)));
+            .retain(|_, (at, _)| !keys.contains(&stored(chunk_of(*at))));
         for id in removed {
             self.forget_entity(id);
         }

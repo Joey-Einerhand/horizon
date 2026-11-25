@@ -188,7 +188,7 @@ impl Game<'_> {
             };
             let children = take_passengers(&mut tag);
             let before = self.next_entity;
-            let key = super::chunk_of(at);
+            let key = self.world.chunks.canonical(super::chunk_of(at));
             let uuid = entity_nbt::uuid(&tag);
             let unknown_before = self.persist.unknown.get(&key).map_or(0, Vec::len);
             if is_mob {
