@@ -1990,13 +1990,23 @@ impl Streaming {
         }
         Some(Arc::new(region))
     }
+    /// The stored column of column `x` on a periodic level (`ChunkMap::canonical`): the columns
+    /// this keeps are stored ones, whatever copy a caller names.
+    fn stored_x(&self, x: i32) -> i32 {
+        if self.period_x == 0 {
+            x
+        } else {
+            x.rem_euclid(self.period_x)
+        }
+    }
     pub fn is_lit(&self, x: i32, z: i32) -> bool {
-        self.lit.contains(&(x, z))
+        self.lit.contains(&(self.stored_x(x), z))
     }
     /// The non-air sections of a column that is a decorated proto chunk
     /// here (vanilla's INITIALIZE_LIGHT and on), if it is one: a level
     /// chunk's light layers count them (#4294).
     pub fn proto_sections(&self, x: i32, z: i32) -> Option<SectionMask> {
+        let x = self.stored_x(x);
         if !self.decorated.contains(&(x, z)) {
             return None;
         }
@@ -2011,7 +2021,7 @@ impl Streaming {
         z: i32,
     ) -> Option<crate::level_loading::Status> {
         use crate::level_loading::Status;
-        let key = (x, z);
+        let key = (self.stored_x(x), z);
         Some(if self.lit.contains(&key) {
             Status::Full
         } else if world.chunks.contains_key(&key) {
@@ -2130,6 +2140,7 @@ impl Streaming {
 
     /// Start planning, yielding before any late-generated column is saved.
     pub fn begin_plan_update(&mut self, world: &mut World) -> PlanStep {
+        self.period_x = world.chunks.period_x().unwrap_or(0);
         let mut hz_laps = crate::spans::laps();
         if self.paused {
             return PlanStep::Ready(StreamingUpdate {
@@ -2139,7 +2150,6 @@ impl Streaming {
                 paused: true,
             });
         }
-        self.period_x = world.chunks.period_x().unwrap_or(0);
         if self.period_x != 0 {
             let p = self.period_x;
             self.center.0 = self.center.0.rem_euclid(p);
@@ -3093,6 +3103,7 @@ impl Streaming {
     /// Update one saved forced ticket without waiting for generation. An add
     /// ranks decoration; gameplay uses `set_forced_loaded` for the load barrier.
     pub fn set_forced(&mut self, x: i32, z: i32, forced: bool) -> bool {
+        let x = self.stored_x(x);
         let mut changed = false;
         self.set_forced_area((x, z), (x, z), forced, |_, _, c| changed = c);
         changed
@@ -3100,6 +3111,7 @@ impl Streaming {
     /// `ServerLevel.setChunkForced`: a newly forced column is present before
     /// returning. Repeated adds and removals only report the set change.
     pub fn set_forced_loaded(&mut self, world: &mut World, x: i32, z: i32, forced: bool) -> bool {
+        let x = self.stored_x(x);
         let changed = self.set_forced(x, z, forced);
         if forced && changed {
             self.wait_for_full_chunk(world, (x, z));
