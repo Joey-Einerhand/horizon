@@ -19,6 +19,9 @@ impl Game<'_> {
         scratch: &mut TickScratch,
     ) -> Result<Option<usize>> {
         let mut laps = horizon_client::spans::laps();
+        // A periodic level's ticks are kept at their stored positions.
+        self.block_ticks
+            .set_period_x(self.world.chunks.period_x().map(|p| p * 16));
         // ServerChunkCache.tick: the tickets that time out.
         let world = &self.world;
         self.tickets

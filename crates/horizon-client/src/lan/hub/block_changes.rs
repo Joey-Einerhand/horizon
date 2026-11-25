@@ -29,9 +29,11 @@ impl Hub {
             .filter_map(|i| {
                 let g = &self.guests[i];
                 if self.watches(g) {
-                    g.sent_chunks
-                        .contains(&key)
-                        .then_some((i, None, &g.sent_chunks))
+                    g.sent_chunks.contains(&self.in_chart(g, key)).then_some((
+                        i,
+                        None,
+                        &g.sent_chunks,
+                    ))
                 } else if viewed {
                     self.view_here(g)
                         .filter(|v| v.sent.contains(&key))
@@ -84,7 +86,12 @@ impl Hub {
             let viewers: Vec<(usize, Option<Level>)> = self
                 .chunk_holders((x, z))
                 .into_iter()
-                .filter(|(_, _, sent)| {
+                .filter(|(i, level, sent)| {
+                    // The player's own copy of the column, on a periodic level.
+                    let (x, z) = match level {
+                        None => self.in_chart(&self.guests[*i], (x, z)),
+                        Some(_) => (x, z),
+                    };
                     (-1..=1).any(|dz| (-1..=1).any(|dx| !sent.contains(&(x + dx, z + dz))))
                 })
                 .map(|(i, level, _)| (i, level))
@@ -135,7 +142,7 @@ impl Hub {
                 !self.terrain_protected(g.conn, &g.dimension)
                     && self.here(g)
                     && g.address == crate::lan::conn::MEMORY_ADDRESS
-                    && !g.sent_chunks.contains(key)
+                    && !g.sent_chunks.contains(&self.in_chart(g, *key))
             };
             for key in &bulk {
                 if let Some(chunk) = world.chunks.get(key)

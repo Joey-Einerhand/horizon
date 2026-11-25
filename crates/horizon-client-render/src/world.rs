@@ -488,6 +488,7 @@ impl World {
     /// write, which `set` makes real at the root commit or which this takes back on an abort,
     /// so nothing outside sees it. False outside the resident chunks or the world's height.
     pub fn set_stored(&mut self, x: i32, y: i32, z: i32, state: BlockStateId) -> bool {
+        let x = self.stored_x(x);
         self.chunks
             .mutate_chunk((x >> 4, z >> 4), |chunk| {
                 if chunk.section_index(y).is_none() {
@@ -554,6 +555,22 @@ impl World {
     /// Resident storage write; marks the touched sections (and neighbours on
     /// section borders) for remeshing and the surrounding chunks for relighting.
     /// Neighbour updates, drops and block entities belong to the gameplay layer.
+    /// Make this a periodic level (`ChunkMap::set_period_x`): X repeats every `period` chunks
+    /// (`None`: it doesn't). Set on a new world, before any chunk arrives.
+    pub fn set_period_x(&mut self, period: Option<i32>) {
+        self.chunks.set_period_x(period);
+        self.block_entities
+            .set_period_x(self.chunks.period_x().map(|p| p * 16));
+    }
+    /// The stored block X of block X `x`: itself, or on a periodic level its copy in
+    /// `0..period`.
+    #[inline(always)]
+    pub fn stored_x(&self, x: i32) -> i32 {
+        match self.chunks.period_x() {
+            Some(p) => x.rem_euclid(p * 16),
+            None => x,
+        }
+    }
     pub fn set(&mut self, x: i32, y: i32, z: i32, state: BlockStateId) -> crate::Result<()> {
         self.set_with_notification(x, y, z, state, true)
     }
@@ -566,6 +583,8 @@ impl World {
         state: BlockStateId,
         notify: bool,
     ) -> crate::Result<()> {
+        // A periodic level's write lands, and is logged, at the stored copy.
+        let x = self.stored_x(x);
         let Some(write) = self.chunks.mutate_chunk((x >> 4, z >> 4), |chunk| {
             let min_y = chunk.min_y();
             let sections = chunk.sections.len() as i32;
@@ -823,6 +842,7 @@ impl World {
     }
     /// Store with the authoritative saved block entity fields.
     pub fn set_container_stack_limit(&mut self, key: (i32, i32, i32), limit: u32) {
+        let key = self.block_entities.stored(key);
         use horizon_core::nbt::{Compound, Tag};
         self.with_chunk_extras(key, |extras| {
             if !extras.block_entity_sources.iter().any(|(p, _)| *p == key) {
@@ -868,6 +888,7 @@ impl World {
     }
     /// Updates a container's lock without changing its stored components.
     pub fn set_block_lock(&mut self, key: (i32, i32, i32), tag: &horizon_core::nbt::Tag) {
+        let key = self.block_entities.stored(key);
         self.update_block_entity_metadata(key, tag, false);
     }
 
@@ -964,6 +985,7 @@ impl World {
     }
     /// Puts back what [`World::block_entity_extras`] kept.
     pub fn set_block_entity_extras(&mut self, key: (i32, i32, i32), kept: BlockEntityExtras) {
+        let key = self.block_entities.stored(key);
         self.with_chunk_extras(key, |extras| {
             extras.block_entity_sources.retain(|(p, _)| *p != key);
             extras
@@ -978,6 +1000,7 @@ impl World {
     /// `LevelChunk.removeBlockEntity`: the tag a block entity was loaded or set
     /// with goes with it, so a container placed there later starts unlocked.
     pub fn forget_block_entity_source(&mut self, key: (i32, i32, i32)) {
+        let key = self.block_entities.stored(key);
         self.with_chunk_extras(key, |extras| {
             extras.block_entity_sources.retain(|(p, _)| *p != key);
             extras.pending_loot.remove(&key);

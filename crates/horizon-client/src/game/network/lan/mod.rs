@@ -2979,6 +2979,7 @@ impl Game<'_> {
         self.tick_server_travel();
         self.lan_swings();
         self.lan_update_streaming();
+        self.rebase_periodic_entities();
         self.lan_guest_poses();
         self.lan_update_waypoints();
         self.lan_sync_scoreboard();
@@ -3507,9 +3508,19 @@ impl Game<'_> {
 
     /// Keep the chunks around every guest loaded.
     pub(super) fn lan_update_streaming(&mut self) {
+        let period = self.world.chunks.period_x().unwrap_or(0);
+        if let Some(host) = self.lan.as_mut() {
+            host.hub.period_x = period;
+        }
         let Some(host) = self.lan.as_ref() else {
             return;
         };
+        // Where each player of a periodic level stands, for its connection's chart.
+        if self.world.chunks.period_x().is_some() {
+            for g in host.hub.guests.simulation_iter().filter(|g| host.hub.watches(g)) {
+                g.sender.chart.set_viewer(g.position[0].floor() as i32);
+            }
+        }
         // DistanceManager.PlayerTicketTracker: every chunk within the server's view distance
         // (Chebyshev) of a player holds a PLAYER_LOADING ticket at the entity-ticking level (31),
         // whatever the player asked for; levels rise by one a chunk, so FULL (33) reaches two

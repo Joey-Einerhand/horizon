@@ -52,6 +52,9 @@ pub struct Ticks {
     /// Worldgen shape updates collect the ticks they schedule here, for the
     /// proto chunks of their region, instead of scheduling them.
     pub(crate) capture: Option<Vec<CapturedTick>>,
+    /// A periodic level's period along X in blocks (0: none): a tick or block event at any copy
+    /// of a position is kept at its stored copy (`0 <= x < period`), with that chunk's ticks.
+    period_x: i32,
 }
 /// A tick scheduled while `Ticks::capture` is set.
 #[derive(Clone, Copy, Debug)]
@@ -87,6 +90,7 @@ impl Ticks {
             block_event_keys: Default::default(),
             handling_tick: 0,
             capture: None,
+            period_x: 0,
         }
     }
     /// `MinecraftServer.getMaxChainedNeighborUpdates`, the limit of this level's
@@ -193,7 +197,8 @@ impl Ticks {
     }
     /// `ServerLevel.blockEvent`'s dedupe: queue `event` at the back unless the
     /// same event is already queued. Returns whether it was queued.
-    pub fn queue_block_event(&mut self, event: super::pistons::BlockEventData) -> bool {
+    pub fn queue_block_event(&mut self, mut event: super::pistons::BlockEventData) -> bool {
+        event.pos = self.stored(event.pos);
         if self.block_event_keys.insert(event) {
             self.block_events.push_back(event);
             true
@@ -222,6 +227,18 @@ impl Ticks {
     pub fn remove_chunk(&mut self, pos: ChunkPos) -> (Option<ChunkTicks>, Option<ChunkTicks>) {
         (self.blocks.remove_chunk(pos), self.fluids.remove_chunk(pos))
     }
+    /// Make these a periodic level's ticks, `period` in blocks (`None`: not periodic).
+    pub fn set_period_x(&mut self, period: Option<i32>) {
+        self.period_x = period.unwrap_or(0);
+    }
+    /// The stored copy of `pos` on a periodic level.
+    #[inline(always)]
+    fn stored(&self, mut pos: BlockPos) -> BlockPos {
+        if self.period_x != 0 {
+            pos.x = pos.x.rem_euclid(self.period_x);
+        }
+        pos
+    }
     /// `ServerLevel.nextSubTickCount`, shared by block and fluid ticks.
     pub fn next_sub_tick(&mut self) -> i64 {
         let value = self.sub_tick;
@@ -236,6 +253,7 @@ impl Ticks {
         delay: i32,
         priority: TickPriority,
     ) -> ScheduleResult {
+        let pos = self.stored(pos);
         if let Some(captured) = &mut self.capture {
             captured.push(CapturedTick {
                 fluid: false,
@@ -261,6 +279,7 @@ impl Ticks {
         fluid: FluidKind,
         delay: i32,
     ) -> ScheduleResult {
+        let pos = self.stored(pos);
         if let Some(captured) = &mut self.capture {
             captured.push(CapturedTick {
                 fluid: true,
@@ -280,10 +299,12 @@ impl Ticks {
         self.fluids.schedule(tick)
     }
     pub fn has_block_tick(&self, pos: BlockPos, block: BlockId) -> bool {
+        let pos = self.stored(pos);
         self.blocks
             .has_scheduled(pos, TickTypeId(u32::from(block.0)))
     }
     pub fn will_block_tick_this_tick(&mut self, pos: BlockPos, block: BlockId) -> bool {
+        let pos = self.stored(pos);
         self.blocks
             .will_tick_this_tick(pos, TickTypeId(u32::from(block.0)))
     }

@@ -805,6 +805,7 @@ impl Game<'_> {
             terrain.set_mob_maps(self.mob_map_snapshot());
         }
         let mut world = Game::world_for_mods(self.res.facts().air, seed);
+        world.set_period_x(super::periodic::level_period_chunks(dim.id(), seed));
         world.attachments = save.load_attachments();
         world.shape = self.level_shapes.get(dim.id());
         world.fast_lava = self.dimension_type_of(dim).fast_lava;

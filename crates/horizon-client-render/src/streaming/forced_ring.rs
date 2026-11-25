@@ -29,7 +29,10 @@ impl Ranges<'_> {
     /// `player_distance`, or the nearer one to a forced chunk whose ring reaches
     /// (x, z): see `forced_distance`.
     pub(super) fn distance(&self, x: i32, z: i32) -> i64 {
-        self.player_distance(x, z).min(self.forced_distance(x, z))
+        self.images(x)
+            .map(|x| self.player_distance(x, z).min(self.forced_distance(x, z)))
+            .min()
+            .unwrap_or(i64::MAX)
     }
 
     /// Distance (squared) to the nearest forced chunk whose ring reaches
@@ -90,6 +93,7 @@ mod tests {
             cover: None,
             forced_cover: None,
             band: None,
+            period: 0,
         };
         let forced: HashSet<(i32, i32)> = [(256, 256)].into();
         let r = ranges(&forced);
@@ -168,6 +172,7 @@ mod tests {
                 cover: None,
                 forced_cover: None,
                 band: None,
+                period: 0,
             };
             // (255, 254) lies nearer the origin than (258, 256), the
             // forced chunk's neighbour two chunks east.

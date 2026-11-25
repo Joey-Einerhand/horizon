@@ -929,6 +929,9 @@ pub struct Streaming {
     mesh_jobs_scratch: Vec<Queued>,
     sequence: u64,
     pub center: (i32, i32),
+    /// The level's period along X in chunks (0: none), taken from its chunk map at each
+    /// update: the areas are then moved to their stored columns (`ChunkMap::canonical`).
+    period_x: i32,
     /// The view distance around `center`; below 0, no area there (a dedicated
     /// server nobody is on).
     pub radius: i32,
@@ -1172,6 +1175,7 @@ impl GenerationScan {
                     x1 = x1.max(next_x1);
                 }
                 for x in x0..=x1 {
+                    let x = input.ranges.stored(x);
                     if !input.ranges.requested(x, z, input.decorates)
                         || input.world.chunks.contains_key(&(x, z))
                         || input.generating.contains(&(x, z))
@@ -1194,7 +1198,7 @@ impl GenerationScan {
             for &(fx, fz) in input.ranges.forced {
                 for dz in -reach..=reach {
                     for dx in -reach..=reach {
-                        let (x, z) = (fx + dx, fz + dz);
+                        let (x, z) = (input.ranges.stored(fx + dx), fz + dz);
                         if input.world.chunks.contains_key(&(x, z))
                             || input.generating.contains(&(x, z))
                             || input.protos.contains_key(&(x, z))
@@ -1214,6 +1218,7 @@ impl GenerationScan {
                 cover: input.ranges.cover,
                 forced_cover: None,
                 band: input.ranges.band,
+                period: input.ranges.period,
             };
             self.remember(ranges, input.world);
             if wanted.is_empty() {
@@ -1565,6 +1570,7 @@ impl Streaming {
             mesh_jobs_scratch: Vec::new(),
             sequence: 0,
             center: (0, 0),
+            period_x: 0,
             radius: 8,
             forced: HashSet::new(),
             commanded: HashSet::new(),
@@ -2133,6 +2139,14 @@ impl Streaming {
                 paused: true,
             });
         }
+        self.period_x = world.chunks.period_x().unwrap_or(0);
+        if self.period_x != 0 {
+            let p = self.period_x;
+            self.center.0 = self.center.0.rem_euclid(p);
+            for (centre, _) in &mut self.extra {
+                centre.0 = centre.0.rem_euclid(p);
+            }
+        }
         ExtraCover::refresh(&mut self.cover, &self.extra);
         if self.forced.is_empty() {
             self.forced_cover = None;
@@ -2319,8 +2333,10 @@ impl Streaming {
                     .filter(|&(&(x, z), p)| {
                         p.is_some()
                             && (self.radius < 0
-                                || i64::from(x - center.0).pow(2) + i64::from(z - center.1).pow(2)
-                                    > r4 * r4)
+                                || ranges.images(x).all(|x| {
+                                    i64::from(x - center.0).pow(2) + i64::from(z - center.1).pow(2)
+                                        > r4 * r4
+                                }))
                             && !ranges.in_extra(x, z, 4)
                             && !ranges.in_band(x, z, 4)
                             && !ranges.forced_within(x, z, FORCED_TERRAIN_RING)
@@ -2445,6 +2461,7 @@ impl Streaming {
                 cover: ExtraCover::current(&self.cover, &self.extra, self.cover_current),
                 forced_cover: self.forced_cover.as_ref().filter(|_| self.cover_current),
                 band: self.band.as_ref(),
+                period: self.period_x,
             };
             retain_decoration_order(&mut self.decoration_order, &ranges, &self.protos);
         }
@@ -2475,6 +2492,7 @@ impl Streaming {
                     cover: ExtraCover::current(&self.cover, &self.extra, self.cover_current),
                     forced_cover: self.forced_cover.as_ref().filter(|_| self.cover_current),
                     band: self.band.as_ref(),
+                    period: self.period_x,
                 };
                 decoration_queue(
                     &mut order,
@@ -2630,6 +2648,7 @@ impl Streaming {
                     cover: ExtraCover::current(&self.cover, &self.extra, self.cover_current),
                     forced_cover: self.forced_cover.as_ref().filter(|_| self.cover_current),
                     band: self.band.as_ref(),
+                    period: self.period_x,
                 };
                 self.waiting.retain(|&(x, sy, z)| {
                     let back = ranges.in_view(x, z);
@@ -2664,6 +2683,7 @@ impl Streaming {
                 cover: ExtraCover::current(&self.cover, &self.extra, self.cover_current),
                 forced_cover: self.forced_cover.as_ref().filter(|_| self.cover_current),
                 band: self.band.as_ref(),
+                period: self.period_x,
             };
             for ((x, z), sections) in columns.iter().copied() {
                 if !world.chunks.contains_key(&(x, z)) {
@@ -2742,6 +2762,7 @@ impl Streaming {
                 cover: ExtraCover::current(&self.cover, &self.extra, self.cover_current),
                 forced_cover: self.forced_cover.as_ref().filter(|_| self.cover_current),
                 band: self.band.as_ref(),
+                period: self.period_x,
             },
             world,
             generating: &self.generating,
@@ -2880,6 +2901,7 @@ impl Streaming {
             cover: ExtraCover::current(&self.cover, &self.extra, self.cover_current),
             forced_cover: self.forced_cover.as_ref().filter(|_| self.cover_current),
             band: self.band.as_ref(),
+            period: self.period_x,
         }
     }
     fn near_finished(&self, x: i32, z: i32, reach: i32) -> bool {
@@ -3364,6 +3386,9 @@ const FORCED_FEATURES_RING: i32 = 3;
 const FORCED_TERRAIN_RING: i32 = 4;
 /// The areas kept loaded: circles around the player and `extra`, and forced chunks.
 struct Ranges<'a> {
+    /// A periodic level's period along X in chunks (0: none). The areas are given at stored
+    /// columns (`0 <= x < period`), and a column counts as near one when any copy of it is.
+    period: i32,
     center: (i32, i32),
     radius: i32,
     extra: &'a [((i32, i32), i32)],
@@ -3700,6 +3725,24 @@ impl Ranges<'_> {
     /// circles, so a fixed margin alone misses the corners of those squares
     /// (render distance 2 never finished the chunks next to the player).
     fn near_finished(&self, x: i32, z: i32, reach: i32) -> bool {
+        self.images(x).any(|x| self.near_finished_flat(x, z, reach))
+    }
+    /// The copies of column `x` an area at a stored column can be near: itself, and on a
+    /// periodic level the ones a period either side (every area is narrower than half one).
+    /// The stored column of column `x`: itself, or on a periodic level its image in `0..period`.
+    fn stored(&self, x: i32) -> i32 {
+        if self.period == 0 {
+            x
+        } else {
+            x.rem_euclid(self.period)
+        }
+    }
+    fn images(&self, x: i32) -> impl Iterator<Item = i32> {
+        let p = self.period;
+        let n = if p == 0 { 1 } else { 3 };
+        [x, x - p, x + p].into_iter().take(n)
+    }
+    fn near_finished_flat(&self, x: i32, z: i32, reach: i32) -> bool {
         let gap = |d: i32| i64::from((d.abs() - reach).max(0));
         let (dx, dz) = (gap(x - self.center.0), gap(z - self.center.1));
         let r = i64::from(self.radius + 1);
@@ -3709,6 +3752,9 @@ impl Ranges<'_> {
             || self.in_band(x, z, 1 + reach)
     }
     fn in_range(&self, x: i32, z: i32, margin: i32) -> bool {
+        self.images(x).any(|x| self.in_range_flat(x, z, margin))
+    }
+    fn in_range_flat(&self, x: i32, z: i32, margin: i32) -> bool {
         self.in_main_range(x, z, margin)
             || self.in_extra(x, z, margin)
             || self.in_band(x, z, margin)
@@ -3732,7 +3778,9 @@ impl Ranges<'_> {
     /// The columns meshed for drawing: those vanilla draws around the
     /// player (`in_view_distance`), and forced ones.
     fn in_view(&self, x: i32, z: i32) -> bool {
-        in_view_distance(self.center, self.radius, x, z) || self.forced.contains(&(x, z))
+        self.images(x).any(|x| {
+            in_view_distance(self.center, self.radius, x, z) || self.forced.contains(&(x, z))
+        })
     }
     fn in_main_range(&self, x: i32, z: i32, margin: i32) -> bool {
         let r = i64::from(self.radius + margin);
@@ -4134,6 +4182,7 @@ mod tests {
             cover: None,
             forced_cover: None,
             band: None,
+            period: 0,
         };
         retain_decoration_order(&mut order, &spawn_ranges, &empty_protos);
         for (x, z) in [(0, 0), (-1, 0), (0, -1), (1, 0)] {
@@ -4188,6 +4237,7 @@ mod tests {
             cover: None,
             forced_cover: None,
             band: Some(&band),
+            period: 0,
         };
         let mut order = DecorationOrder::default();
         for z in band.z0 - 4..=band.z1 + 4 {
@@ -5335,6 +5385,7 @@ mod tests {
             cover: None,
             forced_cover: None,
             band: None,
+            period: 0,
         };
         let generate = |x, z, priority, order| Queued {
             priority,
@@ -5575,6 +5626,7 @@ mod tests {
                     cover: None,
                     forced_cover: None,
                     band: None,
+                    period: 0,
                 },
                 world: &self.world,
                 generating: &self.generating,
@@ -5958,6 +6010,7 @@ mod tests {
                     cover: None,
                     forced_cover: None,
                     band: None,
+                    period: 0,
                 };
                 let square = |x: i32, z: i32, n: i32| {
                     (-n..=n).flat_map(move |dz| (-n..=n).map(move |dx| (x + dx, z + dz)))
@@ -6015,6 +6068,7 @@ mod tests {
                     cover: None,
                     forced_cover: None,
                     band: None,
+                    period: 0,
                 };
                 let span = radius * 3 + 20;
                 for x in -span..=span {
@@ -6052,6 +6106,7 @@ mod tests {
             cover: None,
             forced_cover: None,
             band: None,
+            period: 0,
         };
         for x in -5i32..=15 {
             for z in -13i32..=7 {
@@ -6086,6 +6141,7 @@ mod tests {
                 cover: None,
                 forced_cover: None,
                 band: None,
+                period: 0,
             };
             let level = |x: i32, z: i32| 31 + ((x - 40).abs().max((z + 9).abs()) - view).max(0);
             for x in 40 - view - 8..=40 + view + 8 {
@@ -6141,6 +6197,7 @@ mod tests {
             cover: None,
             forced_cover: None,
             band: None,
+            period: 0,
         };
         let level = |x: i32, z: i32| 31 + (x - 40).abs().max((z + 40).abs());
         for x in 40 - 6..=40 + 6 {
@@ -6282,6 +6339,7 @@ mod cover_tests {
                 cover,
                 forced_cover: None,
                 band: None,
+                period: 0,
             };
             let (scan, grid) = (ranges(None), ranges(Some(&cover)));
             let span = [4, 30, 120][case % 3] + 40;
@@ -6326,6 +6384,7 @@ mod cover_tests {
                 cover,
                 forced_cover: None,
                 band: None,
+                period: 0,
             };
             let (scan, buckets) = (ranges(None), ranges(Some(&cover)));
             // Around each area, and on a coarse lattice over the whole spread. A debug build
@@ -6402,6 +6461,7 @@ mod cover_tests {
                 cover,
                 forced_cover: None,
                 band: None,
+                period: 0,
             };
             // The columns streaming asks about: everything kept, and the
             // generation scan's ring past it.

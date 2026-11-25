@@ -127,6 +127,10 @@ pub struct ChunkMap {
     touched_base: u64,
     /// The sequence number from which every column may have changed (`values_mut`, `clear`).
     touched_all: u64,
+    /// A periodic level's period along X, in chunks (0: none). The columns are stored at
+    /// `0 <= cx < period` only; a key outside that range names the stored column
+    /// `cx.rem_euclid(period)`, so code walking `cx ± 1` crosses the seam unknowingly.
+    period_x: i32,
 }
 /// The columns `ChunkMap::touched_since` remembers; an older cursor rebuilds.
 const MAX_TOUCHED: usize = 8192;
@@ -149,6 +153,7 @@ impl Default for ChunkMap {
             touched: VecDeque::new(),
             touched_base: 0,
             touched_all: 0,
+            period_x: 0,
         }
     }
 }
@@ -182,6 +187,30 @@ impl Drop for ChunkMap {
 }
 
 impl ChunkMap {
+    /// Make this a periodic level's map: X repeats every `period` chunks (`None`: it doesn't).
+    /// Set it on an empty map, before any column arrives. A period under 3 chunks is refused
+    /// (the neighbour counts would meet themselves).
+    pub fn set_period_x(&mut self, period: Option<i32>) {
+        debug_assert!(
+            self.columns.is_empty(),
+            "the period of a map in use changed"
+        );
+        self.period_x = period.filter(|p| *p >= 3).unwrap_or(0);
+    }
+    /// The period along X in chunks, when this is a periodic level's map.
+    #[inline(always)]
+    pub fn period_x(&self) -> Option<i32> {
+        (self.period_x != 0).then_some(self.period_x)
+    }
+    /// The stored column a key names: itself, or its image in `0..period` on a periodic map.
+    #[inline(always)]
+    pub fn canonical(&self, key: Key) -> Key {
+        if self.period_x == 0 {
+            key
+        } else {
+            (key.0.rem_euclid(self.period_x), key.1)
+        }
+    }
     /// Install the authoritative dimension's observer, including already loaded
     /// saved entries before their first read. Client/worker maps have no observer.
     pub fn observe_attachments(&mut self, observer: Arc<dyn AttachmentObserver>) {
@@ -258,6 +287,7 @@ impl ChunkMap {
             debug_assert!(self.columns.is_empty());
             return None;
         }
+        let key = &self.canonical(*key);
         let (cx, cz) = *key;
         let idx = grid_index(cx, cz, mask, self.grid_shift);
         if let Some(slot) = self.grid.get(idx) {
@@ -303,6 +333,7 @@ impl ChunkMap {
         touch: bool,
         f: impl FnOnce(&mut Arc<Chunk>) -> R,
     ) -> Option<R> {
+        let key = self.canonical(key);
         let chunk = self.columns.get_mut(&key)?;
         if touch {
             touch_fields(&mut self.touched, &mut self.touched_base, key);
@@ -331,6 +362,7 @@ impl ChunkMap {
 
     /// The live map, rebound after extras COW but never merely for lighting COW.
     pub fn attachments_mut(&mut self, key: &Key) -> Result<&mut Attachments, AttachmentError> {
+        let key = &self.canonical(*key);
         let chunk = self
             .columns
             .get_mut(key)
@@ -430,6 +462,12 @@ impl ChunkMap {
         Some(slice.copied())
     }
     pub fn insert(&mut self, key: Key, mut chunk: Arc<Chunk>) -> Option<Arc<Chunk>> {
+        debug_assert_eq!(
+            key,
+            self.canonical(key),
+            "a periodic map was handed an alias"
+        );
+        let key = self.canonical(key);
         self.touch(key);
         let limits = chunk
             .saved
@@ -466,7 +504,8 @@ impl ChunkMap {
         if previous.is_none() {
             for z in key.1 - 1..=key.1 + 1 {
                 for x in key.0 - 1..=key.0 + 1 {
-                    *self.near.entry((x, z)).or_insert(0) += 1;
+                    let near = self.canonical((x, z));
+                    *self.near.entry(near).or_insert(0) += 1;
                 }
             }
             self.revision = next_revision();
@@ -495,6 +534,7 @@ impl ChunkMap {
         previous
     }
     pub fn remove(&mut self, key: &Key) -> Option<Arc<Chunk>> {
+        let key = &self.canonical(*key);
         let removed_from_grid = if self.grid_mask != 0 {
             let idx = self.grid_idx(key.0, key.1);
             let slot = &mut self.grid[idx];
@@ -520,10 +560,11 @@ impl ChunkMap {
             }
             for z in key.1 - 1..=key.1 + 1 {
                 for x in key.0 - 1..=key.0 + 1 {
-                    if let Some(n) = self.near.get_mut(&(x, z)) {
+                    let near = self.canonical((x, z));
+                    if let Some(n) = self.near.get_mut(&near) {
                         *n -= 1;
                         if *n == 0 {
-                            self.near.remove(&(x, z));
+                            self.near.remove(&near);
                         }
                     }
                 }
@@ -558,7 +599,7 @@ impl ChunkMap {
     /// Whether the column at `key` and its eight neighbours are all resident.
     #[inline]
     pub fn surrounded(&self, key: Key) -> bool {
-        self.near.get(&key) == Some(&9)
+        self.near.get(&self.canonical(key)) == Some(&9)
     }
     #[inline]
     pub fn has_fresh(&self) -> bool {
@@ -580,9 +621,10 @@ impl ChunkMap {
         }
     }
     pub fn remove_fresh(&mut self, key: &Key) {
-        self.fresh.remove(key);
+        self.fresh.remove(&self.canonical(*key));
     }
     pub fn get_mut(&mut self, key: &Key) -> Option<&mut Arc<Chunk>> {
+        let key = &self.canonical(*key);
         let chunk = self.columns.get_mut(key)?;
         touch_fields(&mut self.touched, &mut self.touched_base, *key);
         evict_grid_slot(
@@ -1484,6 +1526,34 @@ mod tests {
                 }
             }
         }
+        assert_grid_invariants(&map);
+    }
+
+    /// A periodic map stores each column once: any copy of a key reads, writes and removes the
+    /// stored column, and the neighbour counts meet across the seam.
+    #[test]
+    fn a_periodic_map_names_one_column_by_every_copy() {
+        let mut map = ChunkMap::default();
+        map.set_period_x(Some(8));
+        for x in 0..8 {
+            for z in -1..=1 {
+                map.insert((x, z), Arc::new(Chunk::empty(x, z)));
+            }
+        }
+        assert_eq!(map.len(), 24);
+        assert!(
+            map.contains_key(&(8, 0)) && map.contains_key(&(-1, 0)) && map.contains_key(&(-17, 1))
+        );
+        assert!(std::ptr::eq(
+            &**map.get(&(9, 0)).unwrap(),
+            &**map.get(&(1, 0)).unwrap()
+        ));
+        // Column 0's neighbours west are column 7's: all nine resident.
+        assert!(map.surrounded((0, 0)) && map.surrounded((8, 0)) && map.surrounded((7, 0)));
+        map.mutate_chunk((16, 0), |c| Arc::make_mut(c).fresh = true);
+        assert!(map.get(&(0, 0)).unwrap().fresh);
+        assert!(map.remove(&(-8, 0)).is_some());
+        assert!(!map.contains_key(&(0, 0)) && !map.surrounded((1, 0)) && !map.surrounded((7, 0)));
         assert_grid_invariants(&map);
     }
 }

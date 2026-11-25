@@ -91,6 +91,9 @@ pub enum Ticking {
 
 #[derive(Default)]
 pub struct BlockEntities {
+    /// A periodic level's period along X in blocks (0: none): a position at any copy of
+    /// the level names the block entity stored at `x.rem_euclid(period)`.
+    period_x: i32,
     map: HashMap<Pos, BlockEntity>,
     generations: FxHashMap<Pos, u64>,
     on_load: std::collections::VecDeque<(Pos, u64)>,
@@ -389,6 +392,24 @@ pub fn chunk_map_order(positions: impl IntoIterator<Item = Pos>) -> Vec<Pos> {
 }
 
 impl BlockEntities {
+    /// Make this a periodic level's store (`ChunkMap::set_period_x`), `period` in blocks.
+    pub fn set_period_x(&mut self, period: Option<i32>) {
+        self.period_x = period.unwrap_or(0);
+    }
+    /// The stored position a position names: itself, or on a periodic level its copy at
+    /// `0 <= x < period`.
+    #[inline(always)]
+    pub fn stored(&self, pos: Pos) -> Pos {
+        if self.period_x == 0 {
+            pos
+        } else {
+            (pos.0.rem_euclid(self.period_x), pos.1, pos.2)
+        }
+    }
+    /// Whether a block entity is stored at `pos` (at any copy of a periodic level).
+    pub fn contains_key(&self, pos: &Pos) -> bool {
+        self.map.contains_key(&self.stored(*pos))
+    }
     /// Gameplay supplies its subscription decision; storage knows no hook identifiers.
     pub fn set_on_load_enabled(&mut self, enabled: bool) {
         self.on_load_enabled = enabled;
@@ -426,10 +447,12 @@ impl BlockEntities {
 
     /// Runtime identity, retained while an entity is temporarily taken for its tick.
     pub fn generation(&self, pos: &Pos) -> Option<u64> {
+        let pos = &self.stored(*pos);
         self.generations.get(pos).copied()
     }
     /// Restore the identity captured with an existing entity by a transaction.
     pub fn restore_generation(&mut self, pos: Pos, generation: u64) {
+        let pos = self.stored(pos);
         assert!(self.map.contains_key(&pos));
         if self.generation(&pos) != Some(generation) {
             retire_attachments(
@@ -559,6 +582,7 @@ impl BlockEntities {
         &mut self,
         pos: Pos,
     ) -> Option<&mut horizon_mod_runtime::attachments::Attachments> {
+        let pos = self.stored(pos);
         // Identity survives a temporary take and retires on removal or an
         // abandoned-lease sweep, exactly like attachment ownership.
         if !self.generations.contains_key(&pos) {
@@ -574,6 +598,7 @@ impl BlockEntities {
     }
     /// The attachment map of the block entity at `pos`, if it has one.
     pub fn attachments(&self, pos: Pos) -> Option<&horizon_mod_runtime::attachments::Attachments> {
+        let pos = self.stored(pos);
         self.attachments.get(&pos)
     }
     /// Puts the attachment map of the live block entity at `pos` back as `data`, or removes it
@@ -583,6 +608,7 @@ impl BlockEntities {
         pos: Pos,
         data: Option<horizon_mod_runtime::attachments::Attachments>,
     ) {
+        let pos = self.stored(pos);
         match data {
             Some(data) => self.restore_attachments(pos, data),
             None => {
@@ -641,6 +667,7 @@ impl BlockEntities {
     /// in this transaction, as it was then, still bound: a removed block entity a later write
     /// in the same transaction put back.
     pub fn reattach_retired(&mut self, pos: Pos, generation: u64) {
+        let pos = self.stored(pos);
         if self.generation(&pos) != Some(generation) || self.attachments.contains_key(&pos) {
             return;
         }
@@ -664,6 +691,7 @@ impl BlockEntities {
         generation: Option<u64>,
         data: Option<horizon_mod_runtime::attachments::Attachments>,
     ) {
+        let pos = self.stored(pos);
         let kept = self.retiring.as_mut().and_then(|retiring| {
             let at = retiring
                 .iter()
@@ -772,6 +800,7 @@ impl BlockEntities {
     }
     /// `SignBlockEntity.playerWhoMayEdit` of the sign at `pos`.
     pub fn sign_editor(&self, pos: &Pos) -> Option<u128> {
+        let pos = &self.stored(*pos);
         match self.map.get(pos) {
             Some(BlockEntity::Sign(sign)) => sign.allowed_editor,
             _ => None,
@@ -788,6 +817,7 @@ impl BlockEntities {
     /// `SignBlockEntity.setAllowedPlayerEditor`: the one player whose editor
     /// is on the sign at `pos`, or `None` for nobody's.
     pub fn set_sign_editor(&mut self, pos: Pos, who: Option<u128>) {
+        let pos = self.stored(pos);
         let Some(BlockEntity::Sign(sign)) = self.map.get_mut(&pos) else {
             return;
         };
@@ -806,6 +836,7 @@ impl BlockEntities {
     /// Drops `pos` from the signs an editor is on, for a sign that is gone or
     /// no longer holds one. `set_sign_editor` keeps the list itself.
     pub fn forget_sign_editor(&mut self, pos: Pos) {
+        let pos = self.stored(pos);
         self.sign_editors.remove(&pos);
     }
     /// Keeps `pos` listed in `sign_editors` exactly while `entity` holds an
@@ -819,9 +850,11 @@ impl BlockEntities {
     }
     /// `LevelChunk.getBlockEntity`: the block entity at `pos`, if any.
     pub fn get(&self, pos: &Pos) -> Option<&BlockEntity> {
+        let pos = &self.stored(*pos);
         self.map.get(pos)
     }
     pub fn get_mut(&mut self, pos: &Pos) -> Option<&mut BlockEntity> {
+        let pos = &self.stored(*pos);
         self.wake(pos);
         let entity = self.map.get_mut(pos)?;
         if matches!(entity, BlockEntity::Sign(_)) {
@@ -840,11 +873,13 @@ impl BlockEntities {
         self.map.values_mut()
     }
     pub fn sleep(&mut self, pos: Pos) {
+        let pos = self.stored(pos);
         if self.map.contains_key(&pos) && self.asleep.insert(pos) {
             self.awake_tickers = None;
         }
     }
     pub fn is_asleep(&self, pos: &Pos) -> bool {
+        let pos = &self.stored(*pos);
         self.asleep.contains(pos)
     }
     fn replace_taken(&mut self, pos: Pos) {
@@ -858,11 +893,13 @@ impl BlockEntities {
     /// `/data merge block`), where vanilla keeps the object, so its
     /// attachments stay; any other replacement starts them over.
     pub fn insert(&mut self, pos: Pos, entity: BlockEntity) -> Option<BlockEntity> {
+        let pos = self.stored(pos);
         self.insert_impl(pos, entity, false)
     }
     /// Attach a different instance, even when its type matches the old instance.
     /// Payload-only writes use `insert` and retain their identity instead.
     pub fn replace(&mut self, pos: Pos, entity: BlockEntity) -> Option<BlockEntity> {
+        let pos = self.stored(pos);
         self.insert_impl(pos, entity, true)
     }
     fn insert_impl(
@@ -916,6 +953,7 @@ impl BlockEntities {
         pos: Pos,
         make: impl FnOnce() -> BlockEntity,
     ) -> &mut BlockEntity {
+        let pos = self.stored(pos);
         let absent = !self.map.contains_key(&pos);
         if absent {
             self.replace_taken(pos);
@@ -952,6 +990,7 @@ impl BlockEntities {
     /// the event it serves read through a shared host and cannot start another break, so the two
     /// do not nest today; a hook that could would hold per break instead.
     pub fn hold_broken(&mut self, pos: Pos, generation: u64, data: horizon_core::nbt::Compound) {
+        let pos = self.stored(pos);
         self.broken = Some(Broken {
             pos,
             generation,
@@ -961,12 +1000,14 @@ impl BlockEntities {
     /// The data [`Self::hold_broken`] holds, if it is that of the block entity at `pos` with
     /// `generation`.
     pub fn broken(&self, pos: &Pos, generation: u64) -> Option<&Broken> {
+        let pos = &self.stored(*pos);
         self.broken
             .as_ref()
             .filter(|held| held.pos == *pos && held.generation == generation)
     }
     /// The generation of the block entity held at `pos`, if any.
     pub fn broken_generation(&self, pos: &Pos) -> Option<u64> {
+        let pos = &self.stored(*pos);
         self.broken
             .as_ref()
             .filter(|held| held.pos == *pos)
@@ -978,6 +1019,7 @@ impl BlockEntities {
     }
     /// `LevelChunk.removeBlockEntity`: the block entity and its slot.
     pub fn remove(&mut self, pos: &Pos) -> Option<BlockEntity> {
+        let pos = &self.stored(*pos);
         self.out.remove(pos);
         self.retire(*pos);
         self.generations.remove(pos);
@@ -997,6 +1039,7 @@ impl BlockEntities {
     /// The block entity at `pos`, out of the map for a while: its slot stays
     /// for `put` to bring it back (a tick working on it).
     pub fn take(&mut self, pos: &Pos) -> Option<(BlockEntityLease, BlockEntity)> {
+        let pos = &self.stored(*pos);
         self.wake(pos);
         let entity = self.map.remove(pos)?;
         if matches!(entity, BlockEntity::Sign(_)) {
@@ -1018,6 +1061,7 @@ impl BlockEntities {
     /// Re-key a live lease when an intentional state change keeps the instance.
     /// Ordinary removal still revokes it; a retired or foreign lease cannot re-key.
     pub fn rekey(&mut self, pos: &Pos, lease: &mut BlockEntityLease) -> bool {
+        let pos = &self.stored(*pos);
         if lease.pos != *pos
             || self.out.get(pos) != Some(&lease.token)
             || self.generation(pos) != Some(lease.generation)
@@ -1243,6 +1287,7 @@ impl BlockEntities {
     /// `LevelChunk.setBlockState` on a block entity's position, from state
     /// `old` to `new`: a ticker made, kept or dropped.
     pub fn state_changed(&mut self, pos: Pos, old: u32, new: u32) {
+        let pos = self.stored(pos);
         self.wake(&pos);
         if self.states.is_empty() || !self.map.contains_key(&pos) {
             return;
@@ -1360,6 +1405,7 @@ impl BlockEntities {
     }
     /// Frees the slot at `pos` (the block entity stays).
     pub fn forget(&mut self, pos: &Pos) {
+        let pos = &self.stored(*pos);
         self.cancel(pos);
     }
 }

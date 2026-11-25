@@ -115,7 +115,7 @@ impl ViewedTicket {
 /// `(min_x, min_z, max_x, max_z)` that holds every chunk that can random tick,
 /// so a scan of the residents need not ask each one of them.
 #[derive(Clone, Default)]
-pub struct Levels(Option<Arc<Map>>, Option<(i32, i32, i32, i32)>);
+pub struct Levels(Option<Arc<Map>>, Option<(i32, i32, i32, i32)>, i32);
 
 /// The levels by chunk: a grid over the tickets' bounding box while it is
 /// small (players near each other, the usual case), sparse 16×16 tiles otherwise.
@@ -392,7 +392,7 @@ impl Tiled {
 impl Levels {
     /// Chunk coordinates.
     fn get(&self, x: i32, z: i32) -> Option<(u8, u8)> {
-        Some(self.0.as_ref()?.get(x, z))
+        Some(self.0.as_ref()?.get(stored_x(x, self.2), z))
     }
     /// `DistanceManager.inEntityTickingRange`, in an entity-ticking chunk:
     /// where entities tick.
@@ -421,9 +421,22 @@ impl Levels {
     /// and says so. False (`out` untouched) with no tickets, where it holds everywhere, or for a
     /// map this cannot enumerate: the caller scans its own chunks then.
     pub fn random_ticking_sorted(&self, out: &mut Vec<(i32, i32)>) -> bool {
-        self.0
+        let start = out.len();
+        let pushed = self
+            .0
             .as_ref()
-            .is_some_and(|map| map.push_random_ticking(out))
+            .is_some_and(|map| map.push_random_ticking(out));
+        // A periodic level's map also holds the copies across the seam: only stored columns tick.
+        if pushed && self.2 != 0 {
+            let p = self.2;
+            let mut i = 0;
+            out.retain(|&(x, _)| {
+                let keep = i < start || (0..p).contains(&x);
+                i += 1;
+                keep
+            });
+        }
+        pushed
     }
     /// The box that holds every chunk `random_ticking` can answer for, or
     /// `None` with no tickets at all, where it ticks everywhere. A box whose
@@ -473,9 +486,21 @@ pub struct ChunkTickets {
     /// The level changes since the game last took them, in the order the
     /// updates made them.
     changes: Vec<LevelChange>,
+    /// A periodic level's period along X in chunks (0: none): every ticket is held at its
+    /// stored column, and one near the seam also reaches across it.
+    period_x: i32,
 }
 
 impl ChunkTickets {
+    /// Make these a periodic level's tickets (`ChunkMap::set_period_x`), before the first update.
+    pub fn set_period_x(&mut self, period: Option<i32>) {
+        let period = period.unwrap_or(0);
+        if period != self.period_x {
+            self.period_x = period;
+            // The next update computes the levels again.
+            self.sources = None;
+        }
+    }
     /// `None`: tick everywhere.
     pub fn update(&mut self, mut sources: Option<Sources>) {
         // The game submits a fresh `Sources` value every tick even when no
@@ -497,6 +522,7 @@ impl ChunkTickets {
             return;
         }
         if let Some(s) = sources.as_mut() {
+            canonicalise(s, self.period_x);
             s.players.sort_unstable();
             s.players.dedup();
             s.forced.sort_unstable();
@@ -509,12 +535,18 @@ impl ChunkTickets {
         }
         let levels = match sources.as_ref() {
             Some(s) => {
-                let map = Some(Arc::new(compute(s, self.recording)));
+                let imaged = with_images(s, self.period_x);
+                let map = Some(Arc::new(compute(&imaged, self.recording)));
                 // Tickets with no random tick of their own still get a box, an
                 // empty one: `None` is for a game with no tickets at all.
-                Levels(map, Some(random_bounds(s).unwrap_or((1, 1, 0, 0))))
+                let bounds = random_bounds(&imaged).unwrap_or((1, 1, 0, 0));
+                Levels(
+                    map,
+                    Some(clamp_bounds(bounds, self.period_x)),
+                    self.period_x,
+                )
             }
-            None => Levels(None, None),
+            None => Levels(None, None, 0),
         };
         if self.recording {
             self.changes
@@ -539,7 +571,7 @@ impl ChunkTickets {
     pub fn record_changes(&mut self, on: bool) {
         if self.recording != on {
             if let Some(s) = &self.sources {
-                self.levels.0 = Some(Arc::new(compute(s, on)));
+                self.levels.0 = Some(Arc::new(compute(&with_images(s, self.period_x), on)));
             }
             self.recording = on;
         }
@@ -565,6 +597,7 @@ impl ChunkTickets {
         let Some(map) = self.levels.0.as_deref() else {
             return UNLOADED;
         };
+        let x = stored_x(x, self.period_x);
         let level = map.get(x, z).0;
         if level <= FULL || self.recording {
             return level;
@@ -878,6 +911,31 @@ fn compute_sparse(s: &Sources) -> FxHashMap<(i32, i32), (u8, u8)> {
 
 #[cfg(test)]
 mod tests {
+    /// On a periodic level a player next to the seam ticks the chunks across it, at their
+    /// stored columns, as an endless level would; a player at any copy counts as at its stored one.
+    #[test]
+    fn tickets_reach_across_the_seam() {
+        let mut tickets = ChunkTickets::default();
+        tickets.set_period_x(Some(1024));
+        tickets.update(Some(Sources {
+            players: vec![(1024 + 1, 0)],
+            view_distance: 8,
+            simulation_distance: 4,
+            ..Sources::default()
+        }));
+        let levels = tickets.levels();
+        assert!(levels.entity_ticking(1, 0) && levels.entity_ticking(1023, 0));
+        assert!(levels.entity_ticking(-1, 0) && levels.entity_ticking(2047, 0));
+        assert!(!levels.entity_ticking(512, 0));
+        let mut ticking = Vec::new();
+        assert!(levels.random_ticking_sorted(&mut ticking));
+        assert!(
+            ticking.contains(&(1023, 0)) && ticking.iter().all(|&(x, _)| (0..1024).contains(&x))
+        );
+        let (x0, _, x1, _) = levels.random_tick_bounds().unwrap();
+        assert!(x0 >= 0 && x1 < 1024);
+    }
+
     #[test]
     fn recording_controls_reach_and_baseline() {
         for (sources, off_cells, on_cells, edge) in [
@@ -981,8 +1039,8 @@ mod tests {
                         view_distance: view,
                         simulation_distance: sim,
                     };
-                    let a = Levels(Some(Arc::new(compute(&s, false))), random_bounds(&s));
-                    let b = Levels(Some(Arc::new(compute(&s, true))), random_bounds(&s));
+                    let a = Levels(Some(Arc::new(compute(&s, false))), random_bounds(&s), 0);
+                    let b = Levels(Some(Arc::new(compute(&s, true))), random_bounds(&s), 0);
                     assert_eq!(a.random_tick_bounds(), b.random_tick_bounds());
                     for z in -36..=60 {
                         for x in -36..=60 {
@@ -1726,4 +1784,63 @@ mod tiled_tests {
             assert_eq!(tiled.get(50_000, -50_000), NONE);
         }
     }
+}
+
+/// The stored column of chunk column `x` on a level of period `period` (0: none).
+#[inline(always)]
+fn stored_x(x: i32, period: i32) -> i32 {
+    if period == 0 { x } else { x.rem_euclid(period) }
+}
+
+/// Every ticket of a periodic level at its stored column.
+fn canonicalise(s: &mut Sources, period: i32) {
+    if period == 0 {
+        return;
+    }
+    let at = |c: &mut (i32, i32)| c.0 = c.0.rem_euclid(period);
+    s.players.iter_mut().for_each(at);
+    s.forced.iter_mut().for_each(at);
+    s.portal.iter_mut().for_each(|(c, _)| at(c));
+    s.dragon.iter_mut().for_each(at);
+    s.viewed.iter_mut().for_each(|t| at(&mut t.center));
+}
+
+/// `s` with each ticket near the seam also a period over, so that the levels across the seam
+/// come out as they would on an endless level; every reach is far less than a period.
+fn with_images(s: &Sources, period: i32) -> std::borrow::Cow<'_, Sources> {
+    if period == 0 {
+        return std::borrow::Cow::Borrowed(s);
+    }
+    // Wider than any ticket reaches: the view distance and its rings, the dragon's arena.
+    let near = s.view_distance.max(s.simulation_distance).max(ARENA_RADIUS) + 4;
+    let images = |x: i32| {
+        [x - period, x + period]
+            .into_iter()
+            .filter(move |i| *i >= -near && *i < period + near)
+    };
+    let mut out = s.clone();
+    for &(x, z) in &s.players {
+        out.players.extend(images(x).map(|i| (i, z)));
+    }
+    for &(x, z) in &s.forced {
+        out.forced.extend(images(x).map(|i| (i, z)));
+    }
+    for &((x, z), level) in &s.portal {
+        out.portal.extend(images(x).map(|i| ((i, z), level)));
+    }
+    for t in &s.viewed {
+        out.viewed.extend(images(t.center.0).map(|i| ViewedTicket {
+            center: (i, t.center.1),
+            ..*t
+        }));
+    }
+    std::borrow::Cow::Owned(out)
+}
+
+/// A random-tick box of a periodic level, cut to the stored columns.
+fn clamp_bounds(b: (i32, i32, i32, i32), period: i32) -> (i32, i32, i32, i32) {
+    if period == 0 || b.0 > b.2 {
+        return b;
+    }
+    (b.0.max(0), b.1, b.2.min(period - 1), b.3)
 }

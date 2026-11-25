@@ -134,6 +134,9 @@ pub struct ConnWriter {
     adapter: Option<Arc<crate::adapter::Session>>,
     /// Set on a server for a client of an older release: what is sent is renumbered.
     older_client: Option<Arc<crate::adapter::ClientSession>>,
+    /// Set on a server for a player who may stand in a periodic level: what is sent names the
+    /// copy of the level nearest them (`crate::chart`).
+    chart: Option<Arc<crate::chart::Chart>>,
 }
 /// `InetAddress.getByName` under Java's default `java.net.preferIPv6Addresses=false`: IPv4
 /// addresses first, whatever order the system resolver gives (macOS lists IPv6 first). Vanilla
@@ -302,6 +305,7 @@ impl Connection {
                 counters,
                 adapter: None,
                 older_client: None,
+                chart: None,
             },
         })
     }
@@ -622,6 +626,7 @@ impl ConnWriter {
             counters: self.counters.clone(),
             adapter: None,
             older_client: None,
+            chart: None,
         };
         std::mem::replace(self, placeholder)
     }
@@ -680,14 +685,34 @@ impl ConnWriter {
     pub fn serves_older_client(&self) -> bool {
         self.older_client.is_some()
     }
+    /// Send this player what it is sent through `chart` (`crate::chart`), from now on.
+    pub fn set_chart(&mut self, chart: Arc<crate::chart::Chart>) {
+        self.chart = Some(chart);
+    }
+    /// The body moved to this player's chart when its level repeats, the body itself otherwise.
+    fn charted<'a>(&self, body: &'a [u8]) -> Result<std::borrow::Cow<'a, [u8]>> {
+        Ok(
+            match self
+                .chart
+                .as_deref()
+                .map(|c| c.rewrite(body))
+                .transpose()?
+                .flatten()
+            {
+                Some(moved) => std::borrow::Cow::Owned(moved),
+                None => std::borrow::Cow::Borrowed(body),
+            },
+        )
+    }
     /// The packet bodies this connection's client takes for one body, in order: renumbered for a client of an
     /// older release ([`Connection::serve_older`]), none when it has no such packet, and what the packet brought
     /// with it (a boat's wood, an experience orb's value) after it; the body itself otherwise.
     pub fn for_client<'a>(&self, body: &'a [u8]) -> Result<Vec<std::borrow::Cow<'a, [u8]>>> {
+        let body = self.charted(body)?;
         match &self.older_client {
-            None => Ok(vec![std::borrow::Cow::Borrowed(body)]),
+            None => Ok(vec![body]),
             Some(client) => Ok(client
-                .clientbound_all(body)?
+                .clientbound_all(&body)?
                 .into_iter()
                 .map(std::borrow::Cow::Owned)
                 .collect()),
@@ -695,11 +720,11 @@ impl ConnWriter {
     }
     /// The client is of this release: its bodies go out as they are ([`Self::for_client`]).
     pub fn for_client_is_plain(&self) -> bool {
-        self.older_client.is_none()
+        self.older_client.is_none() && !self.chart.as_ref().is_some_and(|c| c.active())
     }
     /// Send one packet body (VarInt id + payload).
     pub fn send(&mut self, body: &[u8]) -> Result<()> {
-        if self.older_client.is_some() {
+        if !self.for_client_is_plain() {
             for body in self.for_client(body)? {
                 self.send_contents(&self.contents(&body)?)?;
             }
@@ -825,6 +850,7 @@ mod tests {
             counters: Arc::default(),
             adapter: None,
             older_client: None,
+            chart: None,
         }
     }
 
