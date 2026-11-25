@@ -262,6 +262,42 @@ impl ProtoChunk {
     pub fn block(&self, x: i32, y: i32, z: i32) -> BlockStateId {
         self.terrain.block(x, y, z)
     }
+    /// Lay `shaper`'s runs over this chunk (`chunk_shaper::chunk_shaper_for`), as its last
+    /// generation step: each block of a run is set to its block's default state, the parts
+    /// outside the chunk or its height are left out, and a block the registry doesn't know is
+    /// skipped. The block entity data of a replaced block goes.
+    pub fn shape(&mut self, shaper: &dyn horizon_core::chunk_shape::ChunkShaper) {
+        let pos = self.position();
+        let data = Arc::clone(&self.data);
+        let (x0, z0) = (pos.x * 16, pos.z * 16);
+        let (min_y, max_y) = (
+            self.terrain.min_y(),
+            self.terrain.min_y() + self.terrain.height(),
+        );
+        // The states under the placed block entity data, to tell which the shape replaced.
+        let before: Vec<BlockStateId> = self
+            .block_entities
+            .iter()
+            .map(|(p, _)| self.terrain.block(p[0], p[1], p[2]))
+            .collect();
+        let terrain = &mut self.terrain;
+        shaper.shape(pos.x, pos.z, &mut |run| {
+            if !(x0..x0 + 16).contains(&run.x) || !(z0..z0 + 16).contains(&run.z) {
+                return;
+            }
+            let Some(state) = data.registry.default_state(run.block) else {
+                return;
+            };
+            let top = (i64::from(run.y) + i64::from(run.height)).min(i64::from(max_y)) as i32;
+            for y in run.y.max(min_y)..top {
+                let _ = terrain.set_block_worldgen(run.x, y, run.z, state);
+            }
+        });
+        let mut before = before.into_iter();
+        let terrain = &self.terrain;
+        self.block_entities
+            .retain(|(p, _)| before.next() == Some(terrain.block(p[0], p[1], p[2])));
+    }
     pub fn block_name(&self, x: i32, y: i32, z: i32) -> &str {
         &self
             .data
@@ -3029,8 +3065,15 @@ pub struct OverworldGenerator {
     /// The noise range the settings asked for and the build height's part
     /// of it that generates, when they differ.
     noise_clamped: Option<(NoiseSettings, NoiseSettings)>,
+    /// What a mod lays over each finished chunk (`chunk_shaper::chunk_shaper_for`).
+    chunk_shaper: Option<Arc<dyn horizon_core::chunk_shape::ChunkShaper>>,
 }
 impl OverworldGenerator {
+    /// What a mod lays over each chunk this generator finishes, before it is lit, saved or sent
+    /// (`chunk_shaper::chunk_shaper_for`); the caller applies it with [`ProtoChunk::shape`].
+    pub fn chunk_shaper(&self) -> Option<&Arc<dyn horizon_core::chunk_shape::ChunkShaper>> {
+        self.chunk_shaper.as_ref()
+    }
     /// The structure starts a chunk owns when they are cached already, else None: no save is
     /// read and nothing is built, for reads that may load no chunk.
     pub fn cached_structure_starts(
@@ -3126,7 +3169,7 @@ impl OverworldGenerator {
             return Err(resource(format!("{dimension} is not a noise generator")));
         }
         let coordinate_map = super::coordinate_map::coordinate_map_for(dimension, seed);
-        Self::from_stem(
+        let mut generator = Self::from_stem(
             data,
             seed,
             &stem,
@@ -3134,7 +3177,9 @@ impl OverworldGenerator {
             regions,
             None,
             coordinate_map,
-        )
+        )?;
+        generator.chunk_shaper = super::chunk_shaper::chunk_shaper_for(dimension, seed);
+        Ok(generator)
     }
     /// The pipeline of level `stem` over its noise settings, with a mod's `terrain` in place of
     /// the noise when it has one.
@@ -3215,6 +3260,7 @@ impl OverworldGenerator {
         Ok(Self {
             pipeline,
             noise_clamped,
+            chunk_shaper: None,
         })
     }
     pub fn data(&self) -> &Arc<GeneratorData> {
@@ -4551,6 +4597,7 @@ mod tests {
                 .expect("pipeline"),
             ),
             noise_clamped: None,
+            chunk_shaper: None,
         };
         let contents = |chunk: &ProtoChunk| {
             let (x0, z0) = (chunk.position().x * 16, chunk.position().z * 16);
@@ -4630,6 +4677,7 @@ mod tests {
         let generator = OverworldGenerator {
             pipeline: pipeline.clone(),
             noise_clamped: None,
+            chunk_shaper: None,
         };
         let barrier = std::sync::Barrier::new(6);
         let pos = ChunkPos::new(11, -11); // ancient city for this seed

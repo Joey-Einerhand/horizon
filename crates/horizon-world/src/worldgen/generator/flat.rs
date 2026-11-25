@@ -131,6 +131,7 @@ impl OverworldGenerator {
         Ok(Self {
             pipeline: Arc::new(pipeline),
             noise_clamped: None,
+            chunk_shaper: None,
         })
     }
 }

@@ -235,6 +235,7 @@ fn ramp_world(
     let worker = OverworldGenerator {
         pipeline: pipeline.clone(),
         noise_clamped: None,
+        chunk_shaper: None,
     }
     .worker();
     (pipeline, worker)
@@ -312,6 +313,7 @@ fn the_climate_samplers_read_a_mod_continents() {
     let mut worker = OverworldGenerator {
         pipeline,
         noise_clamped: None,
+        chunk_shaper: None,
     }
     .worker();
     let quarts: Vec<[i32; 3]> = (-8..8).map(|i| [i * 97, 60, i * -53]).collect();
@@ -401,6 +403,7 @@ fn a_panicking_mod_function_is_not_turned_into_an_error() {
     let mut worker = OverworldGenerator {
         pipeline,
         noise_clamped: None,
+        chunk_shaper: None,
     }
     .worker();
     let message = panics_with(|| worker.noise_biomes(&[[0, 60, 0]]));

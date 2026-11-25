@@ -1301,6 +1301,10 @@ impl ChunkGenerator for VanillaTerrain {
             VanillaProto::Ready(c) => c,
             VanillaProto::Failed(x, z) => return Chunk::with_layout(x, z, self.layout()),
         };
+        // A mod's shape goes on before the chunk is lit, saved or sent: nobody sees it without.
+        if let Some(shaper) = self.generator.chunk_shaper() {
+            chunk.shape(&**shaper);
+        }
         let mut out = chunk.column(self);
         let (block_entities, pending_loot) = crate::structure_blocks::block_entities(&chunk);
         out.block_entities = block_entities;

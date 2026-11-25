@@ -284,6 +284,58 @@ mod tests {
 
     /// A carver cuts the mod's stone at seed 12345, the aquifer of the Overworld's noise filling
     /// it below sea level; the top stays the mod's stone without the surface.
+    /// A chunk shaper's runs land in the finished chunk, cut to it, over what generated there.
+    #[test]
+    #[ignore = "daily"]
+    fn a_chunk_shaper_lays_its_runs_over_the_chunk() {
+        #[derive(Debug)]
+        struct Shaper;
+        impl horizon_core::chunk_shape::ChunkShaper for Shaper {
+            fn shape(
+                &self,
+                _: i32,
+                _: i32,
+                fill: &mut dyn FnMut(horizon_core::chunk_shape::ShapedRun<'_>),
+            ) {
+                use horizon_core::chunk_shape::ShapedRun;
+                fill(ShapedRun {
+                    x: 3,
+                    z: 5,
+                    y: -64,
+                    height: 384,
+                    block: "minecraft:air",
+                });
+                fill(ShapedRun {
+                    x: 3,
+                    z: 5,
+                    y: 70,
+                    height: 2,
+                    block: "minecraft:gold_block",
+                });
+                // Outside the chunk: left out.
+                fill(ShapedRun {
+                    x: 20,
+                    z: 5,
+                    y: 70,
+                    height: 1,
+                    block: "minecraft:gold_block",
+                });
+            }
+        }
+        let level = level(VanillaStages {
+            surface: true,
+            ..Default::default()
+        });
+        let mut chunk = level.worker().generate_proto(ChunkPos::new(0, 0)).unwrap();
+        assert_eq!(chunk.block_name(3, 60, 5), "minecraft:stone");
+        chunk.shape(&Shaper);
+        assert_eq!(chunk.block_name(3, 60, 5), "minecraft:air");
+        assert_eq!(chunk.block_name(3, 70, 5), "minecraft:gold_block");
+        assert_eq!(chunk.block_name(3, 71, 5), "minecraft:gold_block");
+        assert_eq!(chunk.block_name(3, 72, 5), "minecraft:air");
+        assert_eq!(chunk.block_name(4, 60, 5), "minecraft:stone");
+    }
+
     #[test]
     #[ignore = "daily"]
     fn the_carvers_cut_the_mods_terrain() {
