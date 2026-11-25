@@ -2350,15 +2350,17 @@ impl Streaming {
                     .protos
                     .iter()
                     .filter(|&(&(x, z), p)| {
+                        // Far at every copy (a periodic level's areas sit at stored columns).
                         p.is_some()
-                            && (self.radius < 0
-                                || ranges.images(x).all(|x| {
-                                    i64::from(x - center.0).pow(2) + i64::from(z - center.1).pow(2)
-                                        > r4 * r4
-                                }))
-                            && !ranges.in_extra(x, z, 4)
-                            && !ranges.in_band(x, z, 4)
-                            && !ranges.forced_within(x, z, FORCED_TERRAIN_RING)
+                            && ranges.images(x).all(|x| {
+                                (self.radius < 0
+                                    || i64::from(x - center.0).pow(2)
+                                        + i64::from(z - center.1).pow(2)
+                                        > r4 * r4)
+                                    && !ranges.in_extra(x, z, 4)
+                                    && !ranges.in_band(x, z, 4)
+                                    && !ranges.forced_within(x, z, FORCED_TERRAIN_RING)
+                            })
                     })
                     .map(|(k, _)| *k)
                     .collect();
