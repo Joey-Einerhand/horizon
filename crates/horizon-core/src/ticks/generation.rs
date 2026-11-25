@@ -39,6 +39,13 @@ impl ProtoChunkTicks {
     pub fn count(&self) -> usize {
         self.ticks.len()
     }
+    /// Move every tick `dx` blocks along X (a periodic level's chunk standing in for its copy).
+    pub fn shift_x(&mut self, dx: i32) {
+        for tick in &mut self.ticks {
+            tick.pos.x += dx;
+        }
+        self.positions = self.ticks.iter().map(|t| (t.kind, t.pos)).collect();
+    }
     /// Borrow the current saved list. Game time does not affect proto delays.
     pub fn pack(&self, _game_time: i64) -> &[SavedTick] {
         &self.ticks

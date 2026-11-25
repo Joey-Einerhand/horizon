@@ -486,6 +486,13 @@ impl<'r, B: TerrainBlockStates> TerrainChunk<'r, B> {
                 .iter()
                 .all(|&kind| kind.is_opaque(properties))
     }
+    /// Move this chunk `dx` chunks along X with its scheduled ticks (a periodic level's chunk
+    /// standing in for its copy); the blocks are stored by local position and stay.
+    pub(crate) fn shift_x_chunks(&mut self, dx: i32) {
+        self.position = ChunkPos::new(self.position.x + dx, self.position.z);
+        self.block_ticks.shift_x(dx * 16);
+        self.fluid_ticks.shift_x(dx * 16);
+    }
     pub fn position(&self) -> ChunkPos {
         self.position
     }

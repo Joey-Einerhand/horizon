@@ -1102,8 +1102,22 @@ impl ChunkGenerator for VanillaTerrain {
                 Ok(a) => a,
                 Err(_) => unreachable!(),
             };
+            // On a periodic level a neighbour across the seam is its stored chunk: it stands at
+            // its copy's position while the region decorates, then goes back with what was placed.
+            let center = array[4].position();
+            let shifts: [i32; 9] = std::array::from_fn(|i| {
+                let expected = (center.x + i as i32 % 3 - 1, center.z + i as i32 / 3 - 1);
+                let pos = array[i].position();
+                if pos.z == expected.1 { expected.0 - pos.x } else { 0 }
+            });
+            for (chunk, &dx) in array.iter_mut().zip(&shifts) {
+                chunk.shift_x_chunks(dx);
+            }
             if let Err(e) = worker.decorate(&mut array) {
                 log::warn!("Horizon: decorating chunk failed: {e}");
+            }
+            for (chunk, &dx) in array.iter_mut().zip(&shifts) {
+                chunk.shift_x_chunks(-dx);
             }
             for ((slot, chunk), saved_biomes) in region.iter_mut().zip(array).zip(saved_biomes) {
                 *slot = Box::new(VanillaProto::Ready(Box::new(ResidentProto {

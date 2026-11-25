@@ -262,6 +262,27 @@ impl ProtoChunk {
     pub fn block(&self, x: i32, y: i32, z: i32) -> BlockStateId {
         self.terrain.block(x, y, z)
     }
+    /// Move this chunk `dx` chunks along X with everything it holds at absolute positions
+    /// (ticks, block entity data, entities): on a periodic level, a stored chunk stands in for its
+    /// copy across the seam while a neighbour decorates, then moves back.
+    pub fn shift_x_chunks(&mut self, dx: i32) {
+        if dx == 0 {
+            return;
+        }
+        self.terrain.shift_x_chunks(dx);
+        Arc::make_mut(&mut self.biomes).shift_x_chunks(dx);
+        let blocks = dx * 16;
+        for (pos, _) in &mut self.block_entities {
+            pos[0] += blocks;
+        }
+        for entity in &mut self.entities {
+            if let Some(horizon_core::nbt::Tag::List(pos)) = entity.get_mut(&"Pos".into())
+                && let Some(horizon_core::nbt::Tag::Double(bits)) = pos.first_mut()
+            {
+                *bits = (f64::from_bits(*bits) + f64::from(blocks)).to_bits();
+            }
+        }
+    }
     pub fn block_name(&self, x: i32, y: i32, z: i32) -> &str {
         &self
             .data

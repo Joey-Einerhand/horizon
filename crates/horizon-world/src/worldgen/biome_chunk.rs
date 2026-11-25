@@ -28,6 +28,10 @@ impl<E: std::fmt::Display> std::fmt::Display for BiomeFillError<E> {
 }
 impl<E: std::error::Error + 'static> std::error::Error for BiomeFillError<E> {}
 impl<T: Clone> BiomeChunk<T> {
+    /// Move this chunk `dx` chunks along X (a periodic level's chunk standing in for its copy).
+    pub(crate) fn shift_x_chunks(&mut self, dx: i32) {
+        self.position = ChunkPos::new(self.position.x + dx, self.position.z);
+    }
     /// The heap bytes of its quart cells.
     pub fn heap_bytes(&self) -> usize {
         self.sections.capacity() * std::mem::size_of::<[T; 64]>()
