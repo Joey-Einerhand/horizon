@@ -717,10 +717,11 @@ impl DecorationWait<'_> {
     }
 
     fn waits_for(&self, x: i32, z: i32) -> bool {
+        let x = self.ranges.stored(x);
         self.wants(x, z)
             && (-1..=1).all(|dz| {
                 (-1..=1).all(|dx| {
-                    let n = (x + dx, z + dz);
+                    let n = (self.ranges.stored(x + dx), z + dz);
                     if self.world.chunks.contains_key(&n) {
                         self.saves_beside_final
                     } else {
@@ -1660,7 +1661,7 @@ impl Streaming {
         let mask = SectionMask::below(world.layout().sections());
         for dz in -1..=1 {
             for dx in -1..=1 {
-                let n = (key.0 + dx, key.1 + dz);
+                let n = world.chunks.canonical((key.0 + dx, key.1 + dz));
                 if n == key || world.chunks.contains_key(&n) {
                     world.dirty_sections.insert_column_mask(n, mask);
                 }
@@ -1801,8 +1802,11 @@ impl Streaming {
         self.generation_scan.exhausted = false;
         self.decorating -= 1;
         for i in &finals {
-            self.decorating_finals
-                .remove(&(x + (i % 3) as i32 - 1, z + (i / 3) as i32 - 1));
+            let key = (
+                self.stored_x(x + (i % 3) as i32 - 1),
+                z + (i / 3) as i32 - 1,
+            );
+            self.decorating_finals.remove(&key);
         }
         self.decorated.insert((x, z));
         for (i, proto) in region.into_iter().enumerate() {
@@ -1811,7 +1815,10 @@ impl Streaming {
             if finals.contains(&i) {
                 continue;
             }
-            let key = (x + (i % 3) as i32 - 1, z + (i / 3) as i32 - 1);
+            let key = (
+                self.stored_x(x + (i % 3) as i32 - 1),
+                z + (i / 3) as i32 - 1,
+            );
             self.light_views.remove(&key);
             self.protos.insert(key, Some(proto));
             self.written.insert(key);
@@ -1905,7 +1912,7 @@ impl Streaming {
         }
         for dz in -1..=1 {
             for dx in -1..=1 {
-                let n = (key.0 + dx, key.1 + dz);
+                let n = world.chunks.canonical((key.0 + dx, key.1 + dz));
                 if !loaded || world.chunks.get(&n).is_some_and(|c| !c.light_loaded) {
                     world.dirty_light.insert(n);
                 }
@@ -1932,7 +1939,9 @@ impl Streaming {
         let mut complete = true;
         for dz in 0..3 {
             for dx in 0..3 {
-                let n = (x + dx as i32 - 1, z + dz as i32 - 1);
+                let n = world
+                    .chunks
+                    .canonical((x + dx as i32 - 1, z + dz as i32 - 1));
                 region[dz][dx] = match world.chunks.get(&n) {
                     Some(chunk) => Some(chunk.clone()),
                     None if !self.in_range(n.0, n.1, 1) && self.decorated.contains(&n) => {
@@ -2428,7 +2437,8 @@ impl Streaming {
                     }
                     let ready = (-1..=1).all(|dz| {
                         (-1..=1).all(|dx| {
-                            self.decorated.contains(&(x + dx, z + dz))
+                            self.decorated
+                                .contains(&world.chunks.canonical((x + dx, z + dz)))
                                 || world.chunks.contains_key(&(x + dx, z + dz))
                         })
                     });
@@ -2540,8 +2550,13 @@ impl Streaming {
                     }) {
                         continue;
                     }
-                    let keys: [(i32, i32); 9] =
-                        std::array::from_fn(|i| (x + (i as i32 % 3) - 1, z + (i as i32 / 3) - 1));
+                    // On a periodic level a neighbour across the seam is its stored column:
+                    // the region's slots hold it where its copy lies.
+                    let keys: [(i32, i32); 9] = std::array::from_fn(|i| {
+                        world
+                            .chunks
+                            .canonical((x + (i as i32 % 3) - 1, z + (i as i32 / 3) - 1))
+                    });
                     // A final neighbour cannot be generated again: a generator that
                     // can decorates beside it (a chunk of an older world), writing
                     // into it as vanilla's features do; the others skip decoration
@@ -2715,7 +2730,7 @@ impl Streaming {
                 // back.
                 let ready = (-1..=1).all(|dz| {
                     (-1..=1).all(|dx| {
-                        let n = (x + dx, z + dz);
+                        let n = world.chunks.canonical((x + dx, z + dz));
                         self.lit.contains(&n) && !self.lighting.contains_key(&n)
                     })
                 });
@@ -3081,7 +3096,8 @@ impl Streaming {
     pub fn rank_full_task(&mut self, x: i32, z: i32) {
         for dx in -1..=1 {
             for dz in -1..=1 {
-                self.decoration_order.rank_or_append(x + dx, z + dz);
+                self.decoration_order
+                    .rank_or_append(self.stored_x(x + dx), z + dz);
             }
         }
     }
@@ -3942,7 +3958,9 @@ fn take_resent_column(
     if relight {
         for dz in -1..=1 {
             for dx in -1..=1 {
-                world.dirty_light.insert((key.0 + dx, key.1 + dz));
+                world
+                    .dirty_light
+                    .insert(world.chunks.canonical((key.0 + dx, key.1 + dz)));
             }
         }
     }
