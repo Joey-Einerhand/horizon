@@ -78,14 +78,26 @@ impl DecorationOrder {
     /// Whether a lower-ranked chunk within two of `(x, z)` still has to be
     /// decorated (`pending`) first.
     pub fn blocked(&self, x: i32, z: i32, pending: impl Fn(i32, i32) -> bool) -> bool {
+        self.blocked_stored(x, z, |x| x, pending)
+    }
+
+    /// [`Self::blocked`] on a periodic level: each neighbour is looked up at its stored column
+    /// (`stored`), so the ranks across the seam are the stored chunks' and the order stays
+    /// acyclic (a copy's key and its stored chunk's could each wait for the other).
+    pub fn blocked_stored(
+        &self,
+        x: i32,
+        z: i32,
+        stored: impl Fn(i32) -> i32,
+        pending: impl Fn(i32, i32) -> bool,
+    ) -> bool {
         let Some(own) = self.rank(x, z) else {
             return false;
         };
         (-2..=2).any(|dz| {
             (-2..=2).any(|dx| {
-                (dx, dz) != (0, 0)
-                    && self.rank(x + dx, z + dz).is_some_and(|r| r < own)
-                    && pending(x + dx, z + dz)
+                let n = (stored(x + dx), z + dz);
+                n != (x, z) && self.rank(n.0, n.1).is_some_and(|r| r < own) && pending(n.0, n.1)
             })
         })
     }
@@ -395,6 +407,19 @@ mod tests {
         let unique: std::collections::HashSet<_> = order.iter().collect();
         assert_eq!(unique.len(), order.len());
         assert_eq!(order.len(), 23 * 23);
+    }
+
+    #[test]
+    fn ranks_across_a_seam_never_block_each_other_in_a_circle() {
+        // On a level of period 1024, -2 is 1022 and 1024 is 0. Ranked under both keys, 1022 waited
+        // for "1024" and 0 for "-2": each blocked the other for ever.
+        let mut order = DecorationOrder::default();
+        for x in [1024, -2, 1022, 0] {
+            order.rank_or_append(x, 0);
+        }
+        assert!(order.blocked(1022, 0, |_, _| true) && order.blocked(0, 0, |_, _| true));
+        let stored = |x: i32| x.rem_euclid(1024);
+        assert!(!order.blocked_stored(1022, 0, stored, |_, _| true));
     }
 
     #[test]
