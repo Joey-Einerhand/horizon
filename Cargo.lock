@@ -2846,6 +2846,8 @@ dependencies = [
  "flate2",
  "horizon-assets",
  "horizon-core",
+ "horizon-engine-slots",
+ "horizon-mod-api-macros",
  "horizon-threads",
  "indexmap",
  "libm",

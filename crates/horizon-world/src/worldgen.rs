@@ -23,6 +23,7 @@ pub mod carver;
 pub mod carving;
 pub mod cave;
 pub mod chorus_plant;
+pub mod chunk_shaper;
 pub mod climate;
 pub mod decoration;
 pub mod decoration_order;
