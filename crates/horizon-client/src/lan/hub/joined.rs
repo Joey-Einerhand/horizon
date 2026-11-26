@@ -41,6 +41,7 @@ impl Hub {
         );
         let level = self.entities.entry(dimension.clone()).or_default();
         level.range_percent = Some(self.entity_range_percent);
+        level.period_x = self.period_x;
         let (types, sync) = (&mut self.entity_types, &self.sync);
         level.pair_after_tick(entities, &self.riding, &mut viewers, |kind| {
             entity_type(types, sync, kind)

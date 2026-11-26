@@ -964,6 +964,8 @@ struct Probe {
     spectator: bool,
     watching: bool,
     hidden: Option<u8>,
+    /// The level's period along X in chunks (0: none): ranges are measured the short way round.
+    period: i32,
 }
 
 /// One level's tracked entities (ChunkMap.entityMap).
@@ -972,6 +974,10 @@ pub struct Entities {
     /// `entity-broadcast-range-percentage` (None: 100), which scales every
     /// type's tracking range (MinecraftServer.getScaledTrackingDistance).
     pub range_percent: Option<i32>,
+    /// The level's period along X in chunks (0: none, `Hub::period_x`): a client tracks what is
+    /// in range the short way round, so two players a lap apart (the same place in two copies)
+    /// see each other and the mobs around them; each connection's chart sends the copy nearest.
+    pub period_x: i32,
     /// ServerLevel.tick runs ChunkMap.tick after the block ticks, the raids
     /// and ServerChunkCache.tickChunks' spawning and thunder, and before the
     /// entities: an entity that joined the level by then (ids in these
@@ -1131,6 +1137,7 @@ impl Entities {
                 spectator: e.spectator,
                 watching: e.watching,
                 hidden: e.hidden,
+                period: self.period_x,
             };
             let chunks = [(
                 (e.position[0].floor() as i32) >> 4,
@@ -1329,6 +1336,7 @@ impl Entities {
                 spectator: e.spectator,
                 watching: e.watching,
                 hidden: e.hidden,
+                period: self.period_x,
             });
         }
         self.states.end();
@@ -1383,7 +1391,9 @@ impl Entities {
                 &self.is_moved,
                 &self.moved,
             );
-            let (cells_on, stats) = (self.cells.on(), self.cells.stats());
+            // A cell met whole judges distance by its corner in one copy: off on a periodic level.
+            let (cells_on, stats) = (self.cells.on() && self.period_x == 0, self.cells.stats());
+            let period = self.period_x;
             crate::parallel::par_chunks_mut(&mut players, 16, |players| {
                 for (v, flags, starts) in players {
                     flags.clear();
@@ -1409,8 +1419,13 @@ impl Entities {
                             (v.position[2].floor() as i32) >> 4,
                         );
                         for ((&(cx, cz), members), stat) in chunks.iter().zip(members).zip(stats) {
+                            let dcx = if period == 0 {
+                                cx - vx
+                            } else {
+                                (cx - vx + period / 2).rem_euclid(period) - period / 2
+                            };
                             if v.sources.is_none()
-                                && ((cx - vx).abs() > reach || (cz - vz).abs() > reach)
+                                && (dcx.abs() > reach || (cz - vz).abs() > reach)
                             {
                                 cells::drop_cell(v, (cx, cz));
                                 continue;
@@ -2952,6 +2967,24 @@ mod tests {
         assert!(!c.trackers[0].is_tracking(7) && !c.trackers[1].is_tracking(7));
         assert_eq!(c.out[0].first(), Some(&removed));
         assert_eq!(level.len(), 1);
+    }
+
+    /// On a periodic level a zombie a lap away (1024 blocks on, the same place in the next
+    /// copy) is in range: clients a lap apart see the same mobs, and each other.
+    #[test]
+    fn a_periodic_level_tracks_the_short_way_round() {
+        let mut level = Entities::default();
+        let mut c = Clients::new();
+        let mut e = state(1024.0 + 3.0);
+        c.tick(&mut level, &[&e]);
+        assert!(!c.trackers[0].is_tracking(7), "no period: a lap away is out of range");
+        level.period_x = 64;
+        e.position[0] -= 1.0;
+        c.tick(&mut level, &[&e]);
+        assert!(c.trackers[0].is_tracking(7) && c.trackers[1].is_tracking(7));
+        e.position[0] = 512.0;
+        c.tick(&mut level, &[&e]);
+        assert!(!c.trackers[0].is_tracking(7), "half a lap away is far either way");
     }
 
     #[test]
