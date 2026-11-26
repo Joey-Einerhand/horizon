@@ -1095,6 +1095,13 @@ pub trait StartContext: JigsawContext {
     }
     fn seed(&self) -> i64;
     fn sea_level(&self) -> i32;
+    /// The level's period along X in chunks (0: none). On a periodic level only the stored
+    /// chunks (`0 <= x < period`) own starts: a chunk past the period is a copy of a stored one,
+    /// whose starts a seam chunk places with its region moved a period
+    /// (`GeneratorWorker::structure_references`).
+    fn period_chunks(&self) -> i32 {
+        0
+    }
     /// `ChunkGenerator.getMinY`: the noise settings' minimum Y, or a superflat generator's 0
     /// (`MineshaftStructure` and `StrongholdStructure` read it, not the level's).
     fn generator_min_y(&self) -> i32 {

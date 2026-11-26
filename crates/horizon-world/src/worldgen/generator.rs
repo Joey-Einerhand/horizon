@@ -331,6 +331,18 @@ impl ProtoChunk {
     pub fn set_decorated(&mut self) {
         self.decorated = true;
     }
+    /// Undoes [`Self::set_decorated`] after a structures-only pass, so the full decoration still
+    /// runs (a seam chunk's pass for the starts across the seam).
+    pub fn clear_decorated(&mut self) {
+        self.decorated = false;
+    }
+    /// Puts `starts` in place of the starts referencing this chunk, returning the old ones.
+    pub fn replace_structure_starts(
+        &mut self,
+        starts: Vec<Arc<super::structure::start::StructureStart>>,
+    ) -> Vec<Arc<super::structure::start::StructureStart>> {
+        std::mem::replace(&mut self.structure_starts, starts)
+    }
     /// Whether this stands for a full chunk in a decoration region ([`Self::set_full`]).
     pub fn is_full(&self) -> bool {
         self.full
@@ -1638,6 +1650,9 @@ impl<R: RandomSource + 'static> super::structure::start::StartContext for Struct
 where
     R::Positional: Clone + Send + Sync,
 {
+    fn period_chunks(&self) -> i32 {
+        self.worker.period_chunks
+    }
     fn is_old_chunk(&self, chunk: ChunkPos) -> bool {
         self.pipeline
             .old_world
@@ -2076,6 +2091,8 @@ pub(super) struct WorkerState {
     heights: FxHashMap<(i32, i32, u8), i32>,
     /// Decorate with structure pieces only (for structure parity checks).
     pub(super) structures_only: bool,
+    /// The level's period along X in chunks, 0 for none (`StartContext::period_chunks`).
+    pub(super) period_chunks: i32,
     pub(super) structure_mobs: Option<Arc<dyn StructureMobs>>,
     /// The world's surface rule compiled once for this worker's chunks: a
     /// `CompiledSurfaceRule` of the pipeline's random.
@@ -2152,6 +2169,12 @@ trait SeededPipeline: Send + Sync {
         approximate: bool,
     ) -> Result<Vec<LodColumn>, GeneratorError>;
     fn structure_starts(
+        &self,
+        worker: &mut WorkerState,
+        pos: ChunkPos,
+    ) -> Vec<Arc<super::structure::start::StructureStart>>;
+    /// The starts whose pieces reach chunk `pos` (STRUCTURE_REFERENCES).
+    fn structure_references(
         &self,
         worker: &mut WorkerState,
         pos: ChunkPos,
@@ -2300,6 +2323,23 @@ where
     }
     fn level(&self) -> (i32, i32) {
         (self.settings.level_min_y, self.settings.level_height)
+    }
+    fn structure_references(
+        &self,
+        worker: &mut WorkerState,
+        pos: ChunkPos,
+    ) -> Vec<Arc<super::structure::start::StructureStart>> {
+        match &self.structures {
+            Some(structures) => structures.references(
+                &mut StructureQueries {
+                    pipeline: self,
+                    worker,
+                    valid: BTreeSet::new(),
+                },
+                pos,
+            ),
+            None => Vec::new(),
+        }
     }
     fn structure_starts(
         &self,
@@ -3237,6 +3277,7 @@ impl OverworldGenerator {
                 structure_biomes: FxHashMap::default(),
                 timings: StageTimings::default(),
                 structures_only: false,
+                period_chunks: 0,
                 structure_mobs: None,
                 heights: FxHashMap::default(),
                 surface_rule: None,
@@ -3404,6 +3445,19 @@ impl GeneratorWorker {
     /// (for structure placement parity checks).
     pub fn set_structures_only(&mut self, only: bool) {
         self.state.structures_only = only;
+    }
+    /// The level's period along X in chunks (0: none): only stored chunks own structure starts.
+    pub fn set_period_chunks(&mut self, period: i32) {
+        self.state.period_chunks = period.max(0);
+    }
+    /// The structure starts whose pieces reach chunk `pos`, as its proto chunk keeps them: on a
+    /// periodic level, of the stored chunks only, so a seam chunk asks again at its copy's
+    /// position (`pos` a period over) for the starts across the seam.
+    pub fn structure_references(
+        &mut self,
+        pos: ChunkPos,
+    ) -> Vec<Arc<super::structure::start::StructureStart>> {
+        self.pipeline.structure_references(&mut self.state, pos)
     }
     pub fn set_structure_mobs(&mut self, mobs: Arc<dyn StructureMobs>) {
         self.state.structure_mobs = Some(mobs);

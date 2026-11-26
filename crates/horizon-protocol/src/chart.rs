@@ -43,7 +43,7 @@ pub fn set_level_period(dimension: &str, period: Option<i32>) {
 }
 
 /// The period of `dimension`'s level in blocks, 0 when it doesn't repeat.
-fn level_period(dimension: &str) -> i32 {
+pub fn level_period(dimension: &str) -> i32 {
     PERIODS
         .read()
         .unwrap_or_else(|e| e.into_inner())
