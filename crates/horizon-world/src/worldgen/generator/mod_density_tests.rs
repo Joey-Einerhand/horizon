@@ -87,6 +87,50 @@ impl ModDensityFunction for RampFunction {
     }
 }
 
+/// A wall: `0.05 × (top − y)` with `top` 150.5 where `z <= 1` and 70.5 past it, a step a far lattice
+/// 4 blocks apart can't hold. Linear in y, so only the lattice's X/Z blending can move a surface.
+struct Step;
+impl Step {
+    fn top(z: i32) -> f32 {
+        if z <= 1 { 150.5 } else { 70.5 }
+    }
+    fn surface(z: i32) -> i32 {
+        Self::top(z).floor() as i32 + 1
+    }
+}
+impl ModDensityFunctionType for Step {
+    fn owner(&self) -> &str {
+        "worldgen_test"
+    }
+    fn decode(&self, _: &str) -> Result<Arc<dyn ModDensityFunction>, String> {
+        Ok(Arc::new(Step))
+    }
+}
+impl ModDensityFunction for Step {
+    fn range(&self) -> [f32; 2] {
+        [-100.0, 100.0]
+    }
+    fn varies_with_y(&self) -> bool {
+        true
+    }
+    fn sample(&self, [_, y, z]: [i32; 3], _: i64) -> f32 {
+        (0.05 * (Self::top(z) - y as f32)).clamp(-100.0, 100.0)
+    }
+    fn fill(&self, origin: [i32; 3], step: [i32; 3], count: [usize; 3], seed: i64, out: &mut [f32]) {
+        let mut index = 0;
+        for z in 0..count[2] as i32 {
+            for x in 0..count[0] as i32 {
+                for y in 0..count[1] as i32 {
+                    let at = [x, y, z];
+                    let position = std::array::from_fn(|a| origin[a] + at[a] * step[a]);
+                    out[index] = self.sample(position, seed);
+                    index += 1;
+                }
+            }
+        }
+    }
+}
+
 /// `{"value": v}` everywhere, never depending on y.
 struct Flat;
 impl ModDensityFunctionType for Flat {
@@ -164,6 +208,7 @@ fn install() {
             }) as _,
         ),
         ("worldgen_test:flat".to_owned(), Arc::new(Flat) as _),
+        ("worldgen_test:step".to_owned(), Arc::new(Step) as _),
         ("worldgen_test:panics".to_owned(), Arc::new(Panics) as _),
     ]));
 }
@@ -273,6 +318,32 @@ fn chunk_fill_far_terrain_and_structure_height_read_the_mods_density() {
                     "structure base height at {x} {z}"
                 );
             }
+        }
+    }
+}
+
+/// Far tiles one and two blocks a cell put a step's surface where chunk fill does, column for
+/// column: blended across a lattice 4 blocks apart, the wall at z <= 1 lost its edge.
+#[test]
+fn narrow_far_cells_keep_a_step_where_chunks_have_it() {
+    install();
+    let Some(root) = resources() else { return };
+    let data = data(&root);
+    let (_, mut worker) = ramp_world(&data, 5, "worldgen_test:step");
+    let chunk = worker.generate_proto(ChunkPos::new(0, 0)).unwrap();
+    for z in 0..16 {
+        assert_eq!(filled_top(&chunk, 3, z), Step::surface(z), "chunk fill at z {z}");
+    }
+    for width in [1, 2] {
+        let side = 16 / width as usize;
+        let far = worker.lod_grid(0, 0, width, side, false).unwrap();
+        for (i, (sample, _)) in far.iter().enumerate() {
+            let (x, z) = ((i % side) as i32 * width, (i / side) as i32 * width);
+            assert_eq!(
+                sample.unwrap().height,
+                filled_top(&chunk, x, z),
+                "far terrain {width} blocks a cell at {x} {z}"
+            );
         }
     }
 }
