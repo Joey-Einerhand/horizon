@@ -258,6 +258,9 @@ pub(super) fn take_block_pending(
     world: &mut horizon_client::world::World,
     key: (i32, i32, i32),
 ) -> Option<PendingContainerLoot> {
+    // At the stored position: a periodic level keeps a chest's pending loot there, whatever copy
+    // the player opened it at.
+    let key = world.block_entities.stored(key);
     if !world.block_entities.contains_key(&key)
         || !world
             .chunks
