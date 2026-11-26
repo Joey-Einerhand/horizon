@@ -90,14 +90,23 @@ impl crate::game::Game<'_> {
                 continue;
             };
             let s = view.shift(x);
-            if s != 0.0 {
-                self.teleport_to(t, [x + s, y, z], None, false);
-                // What it remembers by block goes with it: a bee a period from its hive drops it.
-                if let Target::Mob(id) = t
-                    && let Some(mob) = self.mobs.iter_mut().find(|m| m.id == id)
-                {
-                    shift_remembered(mob, s as i32);
+            if s == 0.0 {
+                continue;
+            }
+            match t {
+                // Moved, not teleported: a teleport makes a mob leave the boat or minecart it
+                // rides. What it remembers by block goes with it (a bee a period from its hive
+                // drops it), and its path, a period off, is given up.
+                Target::Mob(id) => {
+                    if let Some(mob) = self.mobs.iter_mut().find(|m| m.id == id) {
+                        mob.position.x += s;
+                        mob.previous.x += s;
+                        mob.ai.nav.stop();
+                        mob.needs_sync = true;
+                        shift_remembered(mob, s as i32);
+                    }
                 }
+                _ => self.teleport_to(t, [x + s, y, z], None, false),
             }
         }
         // A knot is held to its fence, which a teleport doesn't move: the knots and the fences
