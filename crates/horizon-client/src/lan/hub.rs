@@ -2198,7 +2198,11 @@ impl Hub {
             return;
         }
         self.guests[i].send(&C::RemoveEntities(play::RemoveEntities { ids }));
-        self.guests.update(i, |g| g.tracker.clear());
+        // Every pair is checked again (`Guest::moved`): only the entities that moved would be.
+        self.guests.update(i, |g| {
+            g.tracker.clear();
+            g.moved = true;
+        });
     }
 
     pub(super) fn resend_teleport(&mut self, i: usize, position: Option<[f64; 3]>) {

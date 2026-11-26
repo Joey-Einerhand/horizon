@@ -92,6 +92,12 @@ impl crate::game::Game<'_> {
             let s = view.shift(x);
             if s != 0.0 {
                 self.teleport_to(t, [x + s, y, z], None, false);
+                // What it remembers by block goes with it: a bee a period from its hive drops it.
+                if let Target::Mob(id) = t
+                    && let Some(mob) = self.mobs.iter_mut().find(|m| m.id == id)
+                {
+                    shift_remembered(mob, s as i32);
+                }
             }
         }
         // A knot is held to its fence, which a teleport doesn't move: the knots and the fences
@@ -111,6 +117,38 @@ impl crate::game::Game<'_> {
                 fence[0] += shift(fence[0]);
             }
         });
+    }
+}
+
+/// The blocks `mob` remembers, moved `dx` along X with it: its home, claimed bed and meeting
+/// bell, a copper golem's opened chest, the jukebox it dances to, the repellent it shuns, a bee's
+/// hive and flower, a villager's bed it lies in and an allay's jukebox.
+fn shift_remembered(mob: &mut horizon_client::mobs::Mob, dx: i32) {
+    let moved = |pos: &mut Option<[i32; 3]>| {
+        if let Some(pos) = pos {
+            pos[0] += dx;
+        }
+    };
+    let extra = &mut mob.extra;
+    for pos in [
+        &mut extra.home,
+        &mut extra.opened_chest,
+        &mut extra.bed,
+        &mut extra.meeting,
+        &mut extra.party_jukebox,
+        &mut extra.repellent,
+    ] {
+        moved(pos);
+    }
+    if let Some(bee) = extra.bee.as_mut() {
+        moved(&mut bee.hive);
+        moved(&mut bee.flower);
+    }
+    if let Some(villager) = extra.villager.as_mut() {
+        moved(&mut villager.sleeping_pos);
+    }
+    if let Some(allay) = extra.allay.as_mut() {
+        moved(&mut allay.jukebox);
     }
 }
 

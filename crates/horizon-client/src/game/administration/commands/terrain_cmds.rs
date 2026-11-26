@@ -472,6 +472,8 @@ impl Game<'_> {
                 // The hook may borrow the live level mutably. Keep a read-only
                 // view of the location for this roll rather than borrow Game.
                 let mut chunks = horizon_client::chunk_map::ChunkMap::default();
+                // A periodic level's copy reads the location at any copy, as the level does.
+                chunks.set_period_x(self.world.chunks.period_x());
                 for (&key, chunk) in self.world.chunks.iter() {
                     chunks.insert(key, chunk.clone());
                 }
