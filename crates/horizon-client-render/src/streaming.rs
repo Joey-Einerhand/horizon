@@ -933,6 +933,8 @@ pub struct Streaming {
     /// The level's period along X in chunks (0: none), taken from its chunk map at each
     /// update: the areas are then moved to their stored columns (`ChunkMap::canonical`).
     period_x: i32,
+    /// `period_x` for far terrain (`lod_source`), whose samplers read it from their own threads.
+    lod_period: Arc<std::sync::atomic::AtomicI32>,
     /// The view distance around `center`; below 0, no area there (a dedicated
     /// server nobody is on).
     pub radius: i32,
@@ -1477,6 +1479,7 @@ mod forced_cover;
 mod forced_ring;
 pub mod immediate_mesh;
 mod mesh_job;
+mod periodic_lod;
 mod relight_now;
 mod viewed_meshing;
 use bounded::nearest_first;
@@ -1572,6 +1575,7 @@ impl Streaming {
             sequence: 0,
             center: (0, 0),
             period_x: 0,
+            lod_period: Arc::default(),
             radius: 8,
             forced: HashSet::new(),
             commanded: HashSet::new(),
@@ -1615,8 +1619,13 @@ impl Streaming {
         }
     }
     /// Shares generation resources, but gives distant work its own worker state.
+    /// Far terrain from this level's generator and saves; on a periodic level, asked of each
+    /// column's stored copy (`periodic_lod`).
     pub fn lod_source(&self) -> Arc<dyn LodSource> {
-        self.saves.clone()
+        Arc::new(periodic_lod::PeriodicLodSource {
+            inner: self.saves.clone(),
+            period: self.lod_period.clone(),
+        })
     }
     /// Resource packs reloaded (`LevelExtractor.allChanged`): mesh with the new
     /// models and sprites, and rebuild every loaded section. Meshes in flight
@@ -2150,6 +2159,8 @@ impl Streaming {
     /// Start planning, yielding before any late-generated column is saved.
     pub fn begin_plan_update(&mut self, world: &mut World) -> PlanStep {
         self.period_x = world.chunks.period_x().unwrap_or(0);
+        self.lod_period
+            .store(self.period_x, std::sync::atomic::Ordering::Relaxed);
         let mut hz_laps = crate::spans::laps();
         if self.paused {
             return PlanStep::Ready(StreamingUpdate {
