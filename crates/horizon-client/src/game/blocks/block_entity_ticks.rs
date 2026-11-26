@@ -342,6 +342,10 @@ impl Game<'_> {
             this.forget_gone_hoppers();
         }
         let ticking = this.block_ticking_area();
+        // On a periodic level each block entity ticks in the copy its players are in: kept at its
+        // stored position, a spawner or beacon a player stood beside on another copy looked for
+        // players a period away and found none. Everything keyed by a block takes any copy.
+        let view = this.periodic_view();
         this.spawner_tick_positions.clear();
         this.trial_spawner_tick_positions.clear();
         this.item_columns = Some(Default::default());
@@ -427,6 +431,7 @@ impl Game<'_> {
             {
                 continue;
             }
+            let pos = view.as_ref().map_or(pos, |view| view.block(pos));
             horizon_threads::work::set_chunk(chunk.0, chunk.1);
             horizon_threads::work::set_entity(horizon_threads::work::entity_id(
                 this.world.block_entities.get(&pos).map_or("", ticker_name),
