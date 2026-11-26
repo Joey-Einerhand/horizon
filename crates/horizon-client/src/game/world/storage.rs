@@ -89,7 +89,10 @@ impl Game<'_> {
             .chunks
             .get(&(key.0 >> 4, key.2 >> 4))
             .and_then(|c| c.saved.as_ref())
-            .is_some_and(|s| s.pending_loot.contains_key(&key))
+            .is_some_and(|s| {
+                s.pending_loot
+                    .contains_key(&self.world.block_entities.stored(key))
+            })
         {
             self.send_overlay_message(
                 Text::translate("container.spectatorCantOpen", &[])

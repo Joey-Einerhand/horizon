@@ -2724,6 +2724,7 @@ impl Game<'_> {
             .then(|| horizon_client::save::PendingContainerLoot::from_tag(tag))
             .flatten();
         let mut changed = false;
+        let key = self.world.block_entities.stored(key);
         self.world.with_chunk_extras(key, |extras| {
             changed = extras.pending_loot.get(&key) != pending.as_ref();
             extras.pending_loot.remove(&key);
@@ -2750,7 +2751,7 @@ impl Game<'_> {
                 .chunks
                 .get(&(key.0 >> 4, key.2 >> 4))
                 .and_then(|c| c.saved.as_ref())
-                .and_then(|s| s.pending_loot.get(&key))
+                .and_then(|s| s.pending_loot.get(&world.block_entities.stored(key)))
             {
                 let items = map.get(&"Items".into()).cloned();
                 pending.write_tags(map);

@@ -836,6 +836,7 @@ impl World {
     }
     /// Persisted container capacity override; absence preserves vanilla capacity.
     pub fn container_stack_limit(&self, key: (i32, i32, i32)) -> Option<u32> {
+        let key = self.block_entities.stored(key);
         self.chunks
             .get_chunk(key.0 >> 4, key.2 >> 4)
             .and_then(|c| c.container_stack_limits.get(&key).copied())
@@ -969,6 +970,8 @@ impl World {
     /// The fields Horizon keeps beside a block entity's model, for a journal: the tag it was
     /// loaded or set with (its `lock`) and its pending loot metadata.
     pub fn block_entity_extras(&self, key: (i32, i32, i32)) -> BlockEntityExtras {
+        // Kept at the stored position, as everything keyed by a block is on a periodic level.
+        let key = self.block_entities.stored(key);
         let saved = self
             .chunks
             .get_chunk(key.0 >> 4, key.2 >> 4)
@@ -1124,6 +1127,35 @@ mod tests {
         world.set_container_stack_limit(key, 30);
         world.chunks.insert((0, 0), Arc::new(Chunk::empty(0, 0)));
         assert_eq!(world.container_stack_limit(key), None);
+    }
+
+    /// On a periodic level a chest's pending loot and stack limit are kept at its stored position
+    /// and found from any copy: read at the copy, a generated chest past the seam opened empty.
+    #[test]
+    fn a_chests_loot_is_found_from_every_copy() {
+        use crate::chunk::{ChunkExtras, PendingContainerLoot};
+        use horizon_core::nbt::{Compound, Tag};
+        let stored = (3, 70, 4);
+        let mut extras = ChunkExtras::default();
+        let loot = PendingContainerLoot {
+            table: Tag::String("minecraft:chests/ruined_portal".into()),
+            seed: Some(Tag::Long(7)),
+        };
+        extras.pending_loot.insert(stored, loot.clone());
+        let mut tag = Compound::new();
+        tag.insert("horizon:stack_limit".into(), Tag::Int(10));
+        extras.block_entity_sources.push((stored, Tag::Compound(tag)));
+        let mut chunk = Chunk::empty(0, 0);
+        chunk.saved = Some(Arc::new(extras));
+        let mut world = World::new(BlockStateId(0), 0);
+        // Four chunks, 64 blocks.
+        world.set_period_x(Some(4));
+        world.chunks.insert((0, 0), Arc::new(chunk));
+        for x in [3, 67, -61] {
+            let at = (x, 70, 4);
+            assert_eq!(world.block_entity_extras(at).pending_loot, Some(loot.clone()), "x {x}");
+            assert_eq!(world.container_stack_limit(at), Some(10), "x {x}");
+        }
     }
 
     /// `/weather thunder` then `/weather clear` in a frozen world: the levels sit at their

@@ -28,6 +28,7 @@ impl Game<'_> {
                 Some(name) => self.world.block_names.insert(key, name),
                 None => self.world.block_names.remove(&key),
             };
+            let key = self.world.block_entities.stored(key);
             self.world.with_chunk_extras(key, |extras| {
                 extras.pending_loot.remove(&key);
                 extras
