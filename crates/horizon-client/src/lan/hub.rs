@@ -2189,6 +2189,18 @@ impl Hub {
 
     /// `ServerGamePacketListenerImpl.teleport` alone (a refused or too fast
     /// move, a teleport sent again): the flying ticks go on.
+    /// Guest `i` stops tracking every entity and pairs them again on the next pass: on a
+    /// periodic level it went to another copy (a teleport by a lap), where its chart sends what
+    /// it is told, and the entities it tracked were sent where they were in the old copy.
+    pub fn track_again(&mut self, i: usize) {
+        let ids = self.guests[i].tracker.ids();
+        if ids.is_empty() {
+            return;
+        }
+        self.guests[i].send(&C::RemoveEntities(play::RemoveEntities { ids }));
+        self.guests.update(i, |g| g.tracker.clear());
+    }
+
     pub(super) fn resend_teleport(&mut self, i: usize, position: Option<[f64; 3]>) {
         self.teleport_relative(i, position, 0);
     }

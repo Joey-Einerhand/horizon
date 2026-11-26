@@ -3511,16 +3511,30 @@ impl Game<'_> {
         let period = self.world.chunks.period_x().unwrap_or(0);
         if let Some(host) = self.lan.as_mut() {
             host.hub.period_x = period;
+            // Where each player of a periodic level stands, for its connection's chart. A player
+            // that went half a period or more since the last tick (a teleport by a lap) is in
+            // another copy: what it tracks was sent in the old one, so it is paired again.
+            if period != 0 {
+                let mut jumped = Vec::new();
+                for (i, g) in host.hub.guests.simulation_indexed_iter() {
+                    if !host.hub.watches(g) {
+                        continue;
+                    }
+                    let x = g.position[0].floor() as i32;
+                    let moved = i64::from(x) - i64::from(g.sender.chart.viewer());
+                    if moved.abs() >= i64::from(period * 8) {
+                        jumped.push(i);
+                    }
+                    g.sender.chart.set_viewer(x);
+                }
+                for i in jumped {
+                    host.hub.track_again(i);
+                }
+            }
         }
         let Some(host) = self.lan.as_ref() else {
             return;
         };
-        // Where each player of a periodic level stands, for its connection's chart.
-        if self.world.chunks.period_x().is_some() {
-            for g in host.hub.guests.simulation_iter().filter(|g| host.hub.watches(g)) {
-                g.sender.chart.set_viewer(g.position[0].floor() as i32);
-            }
-        }
         // DistanceManager.PlayerTicketTracker: every chunk within the server's view distance
         // (Chebyshev) of a player holds a PLAYER_LOADING ticket at the entity-ticking level (31),
         // whatever the player asked for; levels rise by one a chunk, so FULL (33) reaches two
