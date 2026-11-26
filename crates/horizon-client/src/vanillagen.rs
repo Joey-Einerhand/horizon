@@ -943,6 +943,46 @@ pub fn shared_data_with(
     cache.push((dir.to_owned(), overrides.clone(), data.clone()));
     Ok(data)
 }
+impl VanillaTerrain {
+    /// The level's period along X in chunks, 0 for none (`horizon_protocol::chart`).
+    fn period_chunks(&self) -> i32 {
+        horizon_protocol::chart::level_period(&self.dimension) / 16
+    }
+}
+
+/// On a periodic level only stored chunks own structure starts, so a chunk within reach of the
+/// seam has the structures across it placed here: the region stands a period over, where its
+/// copy of the seam's far side is, and the starts reaching the centre there go in (structure
+/// pieces only), before the region decorates as usual.
+fn place_across_seam(worker: &mut GeneratorWorker, region: &mut [ProtoChunk; 9], period: i32) {
+    let center = region[4].position();
+    let dx = if center.x < 8 {
+        period
+    } else if center.x >= period - 8 {
+        -period
+    } else {
+        return;
+    };
+    let across = worker.structure_references(ChunkPos::new(center.x + dx, center.z));
+    if across.is_empty() {
+        return;
+    }
+    for chunk in region.iter_mut() {
+        chunk.shift_x_chunks(dx);
+    }
+    let own = region[4].replace_structure_starts(across);
+    worker.set_structures_only(true);
+    if let Err(e) = worker.decorate(region) {
+        log::warn!("Horizon: placing the structures across the seam failed: {e}");
+    }
+    worker.set_structures_only(false);
+    region[4].clear_decorated();
+    region[4].replace_structure_starts(own);
+    for chunk in region.iter_mut() {
+        chunk.shift_x_chunks(-dx);
+    }
+}
+
 impl ChunkGenerator for VanillaTerrain {
     type Worker = GeneratorWorker;
     fn set_saved_starts(
@@ -994,6 +1034,7 @@ impl ChunkGenerator for VanillaTerrain {
         }
     }
     fn proto(&self, worker: &mut GeneratorWorker, x: i32, z: i32) -> Proto {
+        worker.set_period_chunks(self.period_chunks());
         self.last_proto.store(
             self.elapsed_ms().max(1),
             std::sync::atomic::Ordering::Relaxed,
@@ -1119,6 +1160,11 @@ impl ChunkGenerator for VanillaTerrain {
             });
             for (chunk, &dx) in array.iter_mut().zip(&shifts) {
                 chunk.shift_x_chunks(dx);
+            }
+            let period = self.period_chunks();
+            worker.set_period_chunks(period);
+            if period > 0 {
+                place_across_seam(worker, &mut array, period);
             }
             if let Err(e) = worker.decorate(&mut array) {
                 log::warn!("Horizon: decorating chunk failed: {e}");

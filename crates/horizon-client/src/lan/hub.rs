@@ -365,6 +365,9 @@ pub struct Hub {
     /// (`horizon_protocol::chart`); a chunk the level names is that player's copy of it
     /// ([`Self::in_chart`]).
     pub period_x: i32,
+    /// Each player's block X at the last tick on a periodic level, by connection, to tell a jump
+    /// to another copy (`Hub::track_again`). The chart's own viewer moves with the teleport packet.
+    pub period_last_x: crate::fast_hash::FxHashMap<u32, i32>,
     packet_drain: Option<PacketDrain>,
     deferred_payloads: std::collections::HashMap<Option<u32>, DeferredPayload>,
     /// Main-thread world identity used to bind typed network-context player handles.
@@ -908,6 +911,7 @@ impl Hub {
             chunk_watches: ChunkWatchLog::default(),
             terrain: None,
             period_x: 0,
+            period_last_x: Default::default(),
             packet_drain: None,
             deferred_payloads: Default::default(),
             pending_kicks: Vec::new(),

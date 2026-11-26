@@ -3516,17 +3516,22 @@ impl Game<'_> {
             // another copy: what it tracks was sent in the old one, so it is paired again.
             if period != 0 {
                 let mut jumped = Vec::new();
+                let mut seen = Vec::new();
                 for (i, g) in host.hub.guests.simulation_indexed_iter() {
                     if !host.hub.watches(g) {
                         continue;
                     }
                     let x = g.position[0].floor() as i32;
-                    let moved = i64::from(x) - i64::from(g.sender.chart.viewer());
-                    if moved.abs() >= i64::from(period * 8) {
+                    if let Some(&last) = host.hub.period_last_x.get(&g.conn)
+                        && (i64::from(x) - i64::from(last)).abs() >= i64::from(period * 8)
+                    {
                         jumped.push(i);
                     }
+                    seen.push((g.conn, x));
                     g.sender.chart.set_viewer(x);
                 }
+                host.hub.period_last_x.clear();
+                host.hub.period_last_x.extend(seen);
                 for i in jumped {
                     host.hub.track_again(i);
                 }

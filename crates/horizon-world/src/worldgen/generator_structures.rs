@@ -1009,9 +1009,17 @@ impl StructureState {
         let mut busy_count = 0usize;
         let mut deferred: [Option<Starts>; 289] = [const { None }; 289];
         let mut idx = 0usize;
+        // On a periodic level only stored chunks own starts: one past the period is a copy of a
+        // stored chunk, whose starts built at the copy's position (a different seed) put a second
+        // structure across the seam from the first.
+        let period = context.period_chunks();
         for sx in chunk.x - 8..=chunk.x + 8 {
             for sz in chunk.z - 8..=chunk.z + 8 {
                 let at = ChunkPos::new(sx, sz);
+                if period > 0 && !(0..period).contains(&sx) {
+                    idx += 1;
+                    continue;
+                }
                 match self.build_starts(context, at, false) {
                     Some(starts) if !starts.is_empty() => {
                         if busy_count == 0 {
