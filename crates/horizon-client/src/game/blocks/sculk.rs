@@ -497,6 +497,8 @@ impl Game<'_> {
     fn sculk_sync_writes(&mut self) {
         let writes = std::mem::take(&mut self.world.watched_writes);
         for (key, old, new) in writes {
+            // The index holds stored positions (`sculk_listeners_near`).
+            let key = self.world.block_entities.stored(key);
             let (old_kind, new_kind) = (self.kind_of_state(old), self.kind_of_state(new));
             if old_kind == new_kind {
                 continue;
@@ -523,6 +525,25 @@ impl Game<'_> {
                 self.sculk.index.insert(key);
             }
         }
+    }
+    /// The listeners within `radius` of `at`, each at its copy nearest `at`. The index holds
+    /// stored positions; on a periodic level an event at another copy, or near the seam, is
+    /// looked up around its stored position and a period either side of it.
+    fn sculk_listeners_near(&self, at: [i32; 3], radius: i32) -> Vec<(i32, i32, i32)> {
+        let Some(period) = self.world.chunks.period_x().map(|p| p * 16) else {
+            return self.sculk.index.within(at, radius);
+        };
+        let stored = at[0].rem_euclid(period);
+        let mut near = Vec::new();
+        for image in [stored - period, stored, stored + period] {
+            for key in self.sculk.index.within([image, at[1], at[2]], radius) {
+                let key = (key.0 + at[0] - image, key.1, key.2);
+                if !near.contains(&key) {
+                    near.push(key);
+                }
+            }
+        }
+        near
     }
     fn sculk_scan_chunk(&mut self, key: (i32, i32)) {
         let Some(chunk) = self.world.chunks.get(&key).cloned() else {
@@ -765,7 +786,7 @@ impl Game<'_> {
         }
         let at = block_of(pos);
         let radius = sculk::notification_radius(event).min(16);
-        let near = self.sculk.index.within(at, radius);
+        let near = self.sculk_listeners_near(at, radius);
         // The wardens and allays that may hear it, in the mobs' order, while
         // the slots taken for the mobs' events hold; else every mob is asked.
         let mobs = self.sculk.mob_slots.as_ref().and_then(|s| {
@@ -939,7 +960,8 @@ impl Game<'_> {
         ctx: &Context,
     ) {
         let Some(entity) = self.sculk_entity(key) else {
-            self.sculk.index.remove(&key);
+            let stored = self.world.block_entities.stored(key);
+            self.sculk.index.remove(&stored);
             return;
         };
         let (kind, radius, busy) = (

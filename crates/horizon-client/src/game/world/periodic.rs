@@ -24,19 +24,36 @@ pub(in crate::game) fn level_period_chunks(dimension: &str, seed: i64) -> Option
     blocks.map(|blocks| blocks / 16)
 }
 
+/// Where the players of a periodic level stand along X: what puts a thing kept at its stored
+/// position (a block entity) or wandered off (an entity) in the copy of the world they are in.
+pub(in crate::game) struct PeriodicView {
+    period: f64,
+    players: Vec<f64>,
+}
+
+impl PeriodicView {
+    /// The whole periods that take `x` nearest the nearest player.
+    pub(in crate::game) fn shift(&self, x: f64) -> f64 {
+        self.players
+            .iter()
+            .map(|px| {
+                let s = ((px - x) / self.period).round() * self.period;
+                (s, (x + s - px).abs())
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map_or(0.0, |(s, _)| s)
+    }
+    /// Block `pos` in the copy nearest the nearest player.
+    pub(in crate::game) fn block(&self, pos: (i32, i32, i32)) -> (i32, i32, i32) {
+        let s = self.shift(f64::from(pos.0) + 0.5);
+        (pos.0 + s as i32, pos.1, pos.2)
+    }
+}
+
 impl crate::game::Game<'_> {
-    /// Keep every entity of a periodic level in the copy of the world its players are in: one
-    /// more than half a period from every player moves a whole number of periods to the copy
-    /// nearest the nearest one. Such an entity is too far for anyone to see it go, and around a
-    /// player everything is then in one copy, so reach, pickup, targeting and pathing need
-    /// nothing of their own. Things the level makes at a stored position (a spawner's mob, a
-    /// block's drop) join the player's copy here, a tick later.
-    pub(in crate::game) fn rebase_periodic_entities(&mut self) {
-        use crate::game::commands::Target;
-        let Some(period) = self.world.chunks.period_x() else {
-            return;
-        };
-        let period = f64::from(period * 16);
+    /// The level's period and its players' X, when it repeats and has players.
+    pub(in crate::game) fn periodic_view(&self) -> Option<PeriodicView> {
+        let period = f64::from(self.world.chunks.period_x()? * 16);
         let mut players: Vec<f64> = self.player.iter().map(|p| p.position.x).collect();
         if let Some(host) = self.lan.as_ref() {
             players.extend(
@@ -47,19 +64,19 @@ impl crate::game::Game<'_> {
                     .map(|g| g.position[0]),
             );
         }
-        if players.is_empty() {
+        (!players.is_empty()).then_some(PeriodicView { period, players })
+    }
+
+    /// Keep every entity of a periodic level in the copy of the world its players are in: one
+    /// more than half a period from every player moves a whole number of periods to the copy
+    /// nearest the nearest one. Such an entity is too far for anyone to see it go, and around a
+    /// player everything is then in one copy, so reach, pickup, targeting and pathing need
+    /// nothing of their own. Things the level makes at a stored position (a spawner's mob, a
+    /// block's drop) join the player's copy here, a tick later.
+    pub(in crate::game) fn rebase_periodic_entities(&mut self) {
+        use crate::game::commands::Target;
+        let Some(view) = self.periodic_view() else {
             return;
-        }
-        // The whole periods that take `x` nearest the nearest player.
-        let shift = |x: f64| {
-            players
-                .iter()
-                .map(|px| {
-                    let s = ((px - x) / period).round() * period;
-                    (s, (x + s - px).abs())
-                })
-                .min_by(|a, b| a.1.total_cmp(&b.1))
-                .map_or(0.0, |(s, _)| s)
         };
         for t in self.level_candidates() {
             if matches!(t, Target::Player | Target::Guest(_)) {
@@ -68,7 +85,7 @@ impl crate::game::Game<'_> {
             let Some([x, y, z]) = self.target_position(t) else {
                 continue;
             };
-            let s = shift(x);
+            let s = view.shift(x);
             if s != 0.0 {
                 self.teleport_to(t, [x + s, y, z], None, false);
             }
@@ -78,6 +95,17 @@ impl crate::game::Game<'_> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_stored_block_ticks_in_the_copy_its_players_are_in() {
+        // A 64-block period; a spawner stored at x 61 beside a player at x 2 is at x -3.
+        let view = super::PeriodicView { period: 64.0, players: vec![2.0] };
+        assert_eq!(view.block((61, 70, 5)), (-3, 70, 5));
+        assert_eq!(view.block((10, 70, 5)), (10, 70, 5));
+        // The nearest of two players a lap apart takes it.
+        let view = super::PeriodicView { period: 64.0, players: vec![2.0, 124.0] };
+        assert_eq!(view.block((61, 70, 5)), (125, 70, 5));
+    }
+
     #[test]
     fn vanilla_levels_do_not_repeat() {
         assert_eq!(super::level_period_chunks("minecraft:overworld", 1), None);

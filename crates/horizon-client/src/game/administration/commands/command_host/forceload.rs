@@ -10,6 +10,8 @@ impl ForceloadHost for Game<'_> {
         self.streaming.commanded().iter().copied().collect()
     }
     fn is_commanded(&self, key: (i32, i32)) -> bool {
+        // Forced columns are stored ones: on a periodic level a copy names its stored column.
+        let key = self.world.chunks.canonical(key);
         self.streaming.commanded().contains(&key)
     }
     fn command_failure(&mut self, message: Text) {
