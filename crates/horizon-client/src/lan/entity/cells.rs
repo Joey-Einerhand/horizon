@@ -42,7 +42,11 @@ pub(super) fn sees(v: &Viewer, p: &Probe, chunks: &[(i32, i32)], held: &mut [u8]
     let near = match v.sources {
         None => {
             let range = f64::from(p.range.min(v.view_distance * 16));
-            let (dx, dz) = (v.position[0] - p.x, v.position[2] - p.z);
+            let (mut dx, dz) = (v.position[0] - p.x, v.position[2] - p.z);
+            if p.period != 0 {
+                let period = f64::from(p.period * 16);
+                dx -= (dx / period).round() * period;
+            }
             dx * dx + dz * dz <= range * range
         }
         Some(areas) => super::super::viewed_levels::entities::in_reach(
@@ -54,7 +58,10 @@ pub(super) fn sees(v: &Viewer, p: &Probe, chunks: &[(i32, i32)], held: &mut [u8]
     near && broadcast_to_player(v, p) && !v.tracker.hidden.contains(&p.uuid) && {
         let held = &mut held[p.chunk as usize];
         if *held == 0 {
-            *held = 1 + u8::from(v.chunks.contains(&chunks[p.chunk as usize]));
+            // The client holds its chart's copy of the chunk (`Hub::in_chart`).
+            let viewer = (v.position[0].floor() as i32) >> 4;
+            let chunk = crate::lan::hub::in_chart(p.period, viewer, chunks[p.chunk as usize]);
+            *held = 1 + u8::from(v.chunks.contains(&chunk));
         }
         *held == 2
     }
