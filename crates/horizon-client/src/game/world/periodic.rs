@@ -166,11 +166,17 @@ mod tests {
     #[test]
     fn a_stored_block_ticks_in_the_copy_its_players_are_in() {
         // A 64-block period; a spawner stored at x 61 beside a player at x 2 is at x -3.
-        let view = super::PeriodicView { period: 64.0, players: vec![2.0] };
+        let view = super::PeriodicView {
+            period: 64.0,
+            players: vec![2.0],
+        };
         assert_eq!(view.block((61, 70, 5)), (-3, 70, 5));
         assert_eq!(view.block((10, 70, 5)), (10, 70, 5));
         // The nearest of two players a lap apart takes it.
-        let view = super::PeriodicView { period: 64.0, players: vec![2.0, 124.0] };
+        let view = super::PeriodicView {
+            period: 64.0,
+            players: vec![2.0, 124.0],
+        };
         assert_eq!(view.block((61, 70, 5)), (125, 70, 5));
     }
 

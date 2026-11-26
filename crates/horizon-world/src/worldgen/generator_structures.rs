@@ -865,6 +865,47 @@ impl StructureState {
         radius: i32,
         skip: &dyn Fn(&str, ChunkPos) -> bool,
     ) -> Option<(String, [i32; 3])> {
+        let period = context.period_chunks();
+        if period <= 0 {
+            return self.locate_in(context, names, from, radius, skip, 0);
+        }
+        // On a periodic level only stored chunks own starts: the search runs from the stored
+        // copy of `from` and a period either side of it (for what lies across the seam), and
+        // the nearest find is told at its copy nearest `from`.
+        let blocks = period * 16;
+        let stored = from[0].rem_euclid(blocks);
+        let mut best: Option<(i64, String, [i32; 3])> = None;
+        for image in [stored - blocks, stored, stored + blocks] {
+            let Some((name, mut at)) = self.locate_in(
+                context,
+                names,
+                [image, from[1], from[2]],
+                radius,
+                skip,
+                period,
+            ) else {
+                continue;
+            };
+            at[0] += (from[0] - at[0] + blocks / 2).div_euclid(blocks) * blocks;
+            let (dx, dz) = (i64::from(at[0] - from[0]), i64::from(at[2] - from[2]));
+            let d = dx * dx + dz * dz;
+            if best.as_ref().is_none_or(|(b, ..)| d < *b) {
+                best = Some((d, name, at));
+            }
+        }
+        best.map(|(_, name, at)| (name, at))
+    }
+    /// [`Self::locate`] from `from` as it is, taking starts only from stored chunks when
+    /// `period` (chunks) is set.
+    fn locate_in<C: super::structure::start::StartContext>(
+        &self,
+        context: &mut C,
+        names: &[String],
+        from: [i32; 3],
+        radius: i32,
+        skip: &dyn Fn(&str, ChunkPos) -> bool,
+        period: i32,
+    ) -> Option<(String, [i32; 3])> {
         let seed = context.seed();
         let rings = self.rings(context).clone();
         let wanted = |s: usize| names.iter().any(|n| *n == self.registry.structures[s].name);
@@ -877,6 +918,9 @@ impl StructureState {
             .filter(|&s| wanted(s))
             .collect();
         let found_at = |this: &Self, context: &mut C, chunk: ChunkPos| -> Option<String> {
+            if period > 0 && !(0..period).contains(&chunk.x) {
+                return None;
+            }
             // StructureCheck.checkStart: a chunk with no starts built or saved yet is first
             // asked whether a wanted structure could start there (canCreateStructure, a
             // jigsaw's start piece and its biome), and only then are all its starts built,
