@@ -66,6 +66,10 @@ impl Chart {
     pub fn set_viewer(&self, x: i32) {
         self.viewer_x.store(x, Ordering::Relaxed);
     }
+    /// The block X its player last stood at (`set_viewer`).
+    pub fn viewer(&self) -> i32 {
+        self.viewer_x.load(Ordering::Relaxed)
+    }
     /// Whether packets are looked at: some level of this server repeats.
     pub fn active(&self) -> bool {
         ANY.load(Ordering::Relaxed)

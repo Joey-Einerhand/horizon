@@ -577,16 +577,26 @@ impl Game<'_> {
         let mut out = Vec::new();
         for z in cz - chunk_radius..=cz + chunk_radius {
             for x in cx - chunk_radius..=cx + chunk_radius {
-                match self.world.chunks.get(&(x, z)) {
-                    Some(c) => out.extend(c.blocks_where(is_portal)),
-                    None => out.extend_from_slice(&self.save.saved_portal_blocks(
-                        x,
-                        z,
-                        self.pack.assets.registry,
-                        world_biomes!(self),
-                        is_portal,
-                    )),
-                }
+                // On a periodic level the chunk is kept, and saved, at its stored column and names
+                // its blocks there: they are moved to the copy searched, or a portal on a copy
+                // was a period away and the way back built another.
+                let (sx, _) = self.world.chunks.canonical((x, z));
+                let (found, from) = match self.world.chunks.get(&(sx, z)) {
+                    Some(c) => (c.blocks_where(is_portal), c.x),
+                    None => (
+                        self.save.saved_portal_blocks(
+                            sx,
+                            z,
+                            self.pack.assets.registry,
+                            world_biomes!(self),
+                            is_portal,
+                        )
+                        .to_vec(),
+                        sx,
+                    ),
+                };
+                let shift = (x - from) * 16;
+                out.extend(found.into_iter().map(|p| BlockPos::new(p.x + shift, p.y, p.z)));
             }
         }
         out
