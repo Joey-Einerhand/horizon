@@ -113,9 +113,18 @@ impl Game<'_> {
             index.drawn.entry(*p).or_insert(i);
         }
         let steps = self.push_step_heights();
+        // On a periodic level a moving piston is kept at its stored position: it pushes in the
+        // copy its players are in, or one beside a player on another copy pushed nothing.
+        let stored: Vec<BlockPos> = pushes.iter().map(|push| push.0).collect();
+        let mut pushes = pushes;
+        if let Some(view) = self.periodic_view() {
+            for push in &mut pushes {
+                let (x, y, z) = view.block((push.0.x, push.0.y, push.0.z));
+                push.0 = BlockPos::new(x, y, z);
+            }
+        }
         let targets = self.piston_push_targets(&pushes, &steps);
-        for push in pushes {
-            let pos = push.0;
+        for (push, pos) in pushes.into_iter().zip(stored) {
             self.push_for_piston(push, &targets, &steps, &mut accumulators, &mut pricked);
             self.advance_piston_collision(pos, &index);
         }
