@@ -94,6 +94,23 @@ impl crate::game::Game<'_> {
                 self.teleport_to(t, [x + s, y, z], None, false);
             }
         }
+        // A knot is held to its fence, which a teleport doesn't move: the knots and the fences
+        // mobs are leashed to move by the same whole periods, or a mob's leash snapped a period
+        // from its knot (and the knot, holding nothing, went).
+        let shift = |x: i32| view.shift(f64::from(x) + 0.5) as i32;
+        self.resident_entities
+            .knots
+            .for_each_mut(|knot| knot.fence[0] += shift(knot.fence[0]));
+        for mob in self.mobs.iter_mut() {
+            if let Some(horizon_client::mobs::leash::Holder::Knot(fence)) = &mut mob.extra.leash {
+                fence[0] += shift(fence[0]);
+            }
+        }
+        self.boats.for_each_mut(|boat| {
+            if let Some(horizon_client::mobs::leash::Holder::Knot(fence)) = &mut boat.leash {
+                fence[0] += shift(fence[0]);
+            }
+        });
     }
 }
 
