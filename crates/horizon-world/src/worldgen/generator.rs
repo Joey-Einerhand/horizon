@@ -2840,6 +2840,36 @@ where
                 rz - iz as f32,
             )
         };
+        // Columns between lattice points whose corners stand far apart in height are sampled on
+        // their own: the chunk generator evaluates the parts of the graph outside `interpolated`
+        // at each block, so a step there (a cliff, a mod's wall) blended across a lattice 4 blocks
+        // wide drew up to 3 columns of terrain that chunks don't have, or left out ones they do.
+        // Sampling every column instead cost a hundred times as much (`lod_grid_bench`, level 0:
+        // 2.6 ms a tile against 261); this costs only where the corners differ.
+        let lattice_top = |ix: usize, iz: usize| {
+            (0..ny as usize)
+                .rev()
+                .find(|&iy| densities[volume.index([ix, iy, iz]).unwrap()] > 0.)
+                .map_or(i32::MIN, |iy| iy as i32 * step_y)
+        };
+        let tops: Vec<i32> = (0..nz as usize)
+            .flat_map(|iz| (0..nx as usize).map(move |ix| (ix, iz)))
+            .map(|(ix, iz)| lattice_top(ix, iz))
+            .collect();
+        let steep = |wx: i32, wz: i32| {
+            if (wx - ox) % step_xz == 0 && (wz - oz) % step_xz == 0 {
+                return false;
+            }
+            let ix = ((wx - ox) / step_xz) as usize;
+            let iz = ((wz - oz) / step_xz) as usize;
+            let corner = |dx: usize, dz: usize| {
+                tops[(iz + dz).min(nz as usize - 1) * nx as usize + (ix + dx).min(nx as usize - 1)]
+            };
+            let corners = [corner(0, 0), corner(1, 0), corner(0, 1), corner(1, 1)];
+            let (low, high) = (corners.iter().min().unwrap(), corners.iter().max().unwrap());
+            i64::from(*high) - i64::from(*low) > i64::from(2 * step_y)
+        };
+        let mut own = vec![0.; ny as usize];
         let mut profile = vec![0.; ny as usize];
         let mut resolver = self.source.resolver(
             &self.climate,
@@ -2864,8 +2894,17 @@ where
                 let mut below = 0;
                 let mut complete = false;
                 let mut spans: Vec<(i32, i32, BlockStateId)> = Vec::new();
-                for (iy, density) in profile.iter_mut().enumerate() {
-                    *density = value(wx, iy, wz);
+                if steep(wx, wz) {
+                    let column = DensityVolume::new([1, ny, 1], [wx, band_min, wz], [1, step_y, 1])
+                        .map_err(stage("far density"))?;
+                    final_density
+                        .sample_volume(&mut context, &mut own, column)
+                        .map_err(stage("far density"))?;
+                    profile.copy_from_slice(&own);
+                } else {
+                    for (iy, density) in profile.iter_mut().enumerate() {
+                        *density = value(wx, iy, wz);
+                    }
                 }
                 for y in (band_min..band_max).rev() {
                     let iy = ((y - band_min) / step_y) as usize;
