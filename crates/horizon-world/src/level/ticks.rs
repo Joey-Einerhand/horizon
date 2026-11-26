@@ -55,6 +55,10 @@ pub struct Ticks {
     /// A periodic level's period along X in blocks (0: none): a tick or block event at any copy
     /// of a position is kept at its stored copy (`0 <= x < period`), with that chunk's ticks.
     period_x: i32,
+    /// Where a periodic level's players stand along X: a due tick runs at the copy of its
+    /// position nearest them, so what it looks for around itself (an entity on a pressure plate)
+    /// is in the copy they are in, not a period away.
+    viewers_x: Vec<f64>,
 }
 /// A tick scheduled while `Ticks::capture` is set.
 #[derive(Clone, Copy, Debug)]
@@ -91,6 +95,7 @@ impl Ticks {
             handling_tick: 0,
             capture: None,
             period_x: 0,
+            viewers_x: Vec::new(),
         }
     }
     /// `MinecraftServer.getMaxChainedNeighborUpdates`, the limit of this level's
@@ -230,6 +235,30 @@ impl Ticks {
     /// Make these a periodic level's ticks, `period` in blocks (`None`: not periodic).
     pub fn set_period_x(&mut self, period: Option<i32>) {
         self.period_x = period.unwrap_or(0);
+    }
+    /// Where the level's players stand along X (`viewers_x`).
+    pub fn set_viewers_x(&mut self, xs: impl IntoIterator<Item = f64>) {
+        self.viewers_x.clear();
+        self.viewers_x.extend(xs);
+    }
+    /// `pos` at the copy nearest the nearest player on a periodic level.
+    pub fn in_view(&self, mut pos: BlockPos) -> BlockPos {
+        if self.period_x == 0 {
+            return pos;
+        }
+        let period = f64::from(self.period_x);
+        let x = f64::from(pos.x) + 0.5;
+        let shift = self
+            .viewers_x
+            .iter()
+            .map(|px| {
+                let s = ((px - x) / period).round() * period;
+                (s, (x + s - px).abs())
+            })
+            .min_by(|a, b| a.1.total_cmp(&b.1))
+            .map_or(0.0, |(s, _)| s);
+        pos.x += shift as i32;
+        pos
     }
     /// The stored copy of `pos` on a periodic level.
     #[inline(always)]
@@ -454,6 +483,17 @@ mod tests {
                 "pos {i}"
             );
         }
+    }
+
+    /// A due tick stored at x 61 on a 64-block period runs beside a player at x 2, at x -3.
+    #[test]
+    fn a_due_tick_runs_in_the_copy_its_players_are_in() {
+        let mut ticks = Ticks::new(0);
+        assert_eq!(ticks.in_view(BlockPos::new(61, 5, 1)).x, 61);
+        ticks.set_period_x(Some(64));
+        ticks.set_viewers_x([2.0]);
+        assert_eq!(ticks.in_view(BlockPos::new(61, 5, 1)).x, -3);
+        assert_eq!(ticks.in_view(BlockPos::new(10, 5, 1)).x, 10);
     }
 
     #[test]

@@ -1980,14 +1980,16 @@ impl Behaviours {
         fluids: bool,
     ) -> bool {
         if fluids {
-            let Ok(Some(tick)) = ticks.fluids.next_tick() else {
+            let Ok(Some(mut tick)) = ticks.fluids.next_tick() else {
                 return false;
             };
+            tick.pos = ticks.in_view(tick.pos);
             self.sim(level, ticks).run_due_fluid_tick(tick);
         } else {
-            let Ok(Some(tick)) = ticks.blocks.next_tick() else {
+            let Ok(Some(mut tick)) = ticks.blocks.next_tick() else {
                 return false;
             };
+            tick.pos = ticks.in_view(tick.pos);
             self.sim(level, ticks).run_due_block_tick(tick);
         }
         true

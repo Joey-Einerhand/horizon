@@ -22,6 +22,9 @@ impl Game<'_> {
         // A periodic level's ticks are kept at their stored positions.
         self.block_ticks
             .set_period_x(self.world.chunks.period_x().map(|p| p * 16));
+        // Due ticks run in the copy the players are in (`Ticks::in_view`).
+        let viewers = self.periodic_view().map(|view| view.players().to_vec());
+        self.block_ticks.set_viewers_x(viewers.unwrap_or_default());
         // ServerChunkCache.tick: the tickets that time out.
         let world = &self.world;
         self.tickets

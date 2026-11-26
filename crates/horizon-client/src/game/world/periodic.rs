@@ -43,6 +43,10 @@ impl PeriodicView {
             .min_by(|a, b| a.1.total_cmp(&b.1))
             .map_or(0.0, |(s, _)| s)
     }
+    /// The players' X.
+    pub(in crate::game) fn players(&self) -> &[f64] {
+        &self.players
+    }
     /// Block `pos` in the copy nearest the nearest player.
     pub(in crate::game) fn block(&self, pos: (i32, i32, i32)) -> (i32, i32, i32) {
         let s = self.shift(f64::from(pos.0) + 0.5);
