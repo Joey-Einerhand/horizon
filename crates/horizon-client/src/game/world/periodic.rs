@@ -106,6 +106,11 @@ impl crate::game::Game<'_> {
                 fence[0] += shift(fence[0]);
             }
         }
+        self.boats.for_each_mut(|boat| {
+            if let Some(horizon_client::mobs::leash::Holder::Knot(fence)) = &mut boat.leash {
+                fence[0] += shift(fence[0]);
+            }
+        });
     }
 }
 
