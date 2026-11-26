@@ -627,7 +627,9 @@ impl VanillaTerrain {
         from: [i32; 3],
         radius: i32,
     ) -> Option<(String, [i32; 3])> {
-        self.generator.worker().locate(names, from, radius)
+        let mut worker = self.generator.worker();
+        worker.set_period_chunks(self.period_chunks());
+        worker.locate(names, from, radius)
     }
     /// The chunks an older version saved, which new chunks blend with
     /// (`Blender.of`).
@@ -665,34 +667,33 @@ impl VanillaTerrain {
             .clone();
         // The skip check locks per candidate: `locate_skipping` runs it here
         // on the calling thread, and a `dyn Fn` cannot carry a guard.
-        let found =
-            self.generator
-                .worker()
-                .locate_skipping(names, from, radius, &|name, chunk| {
-                    // This session's references first: they grow as maps resolve.
-                    if self
-                        .referenced
-                        .lock()
-                        .unwrap_or_else(|e| e.into_inner())
-                        .get(name)
-                        .is_some_and(|chunks| chunks.contains(&(chunk.x, chunk.z)))
-                    {
-                        return true;
-                    }
-                    let mut checked = self.saved_checked.lock().unwrap_or_else(|e| e.into_inner());
-                    if let Some(count) = checked
-                        .get(name)
-                        .and_then(|chunks| chunks.get(&(chunk.x, chunk.z)))
-                    {
-                        return *count > 0;
-                    }
-                    let count = saved.as_ref().map_or(0, |f| f(name, chunk.x, chunk.z));
-                    checked
-                        .entry(name.to_owned())
-                        .or_default()
-                        .insert((chunk.x, chunk.z), count);
-                    count > 0
-                })?;
+        let mut worker = self.generator.worker();
+        worker.set_period_chunks(self.period_chunks());
+        let found = worker.locate_skipping(names, from, radius, &|name, chunk| {
+            // This session's references first: they grow as maps resolve.
+            if self
+                .referenced
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(name)
+                .is_some_and(|chunks| chunks.contains(&(chunk.x, chunk.z)))
+            {
+                return true;
+            }
+            let mut checked = self.saved_checked.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some(count) = checked
+                .get(name)
+                .and_then(|chunks| chunks.get(&(chunk.x, chunk.z)))
+            {
+                return *count > 0;
+            }
+            let count = saved.as_ref().map_or(0, |f| f(name, chunk.x, chunk.z));
+            checked
+                .entry(name.to_owned())
+                .or_default()
+                .insert((chunk.x, chunk.z), count);
+            count > 0
+        })?;
         self.referenced
             .lock()
             .unwrap_or_else(|e| e.into_inner())
@@ -1156,7 +1157,11 @@ impl ChunkGenerator for VanillaTerrain {
             let shifts: [i32; 9] = std::array::from_fn(|i| {
                 let expected = (center.x + i as i32 % 3 - 1, center.z + i as i32 / 3 - 1);
                 let pos = array[i].position();
-                if pos.z == expected.1 { expected.0 - pos.x } else { 0 }
+                if pos.z == expected.1 {
+                    expected.0 - pos.x
+                } else {
+                    0
+                }
             });
             for (chunk, &dx) in array.iter_mut().zip(&shifts) {
                 chunk.shift_x_chunks(dx);

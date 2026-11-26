@@ -1424,8 +1424,7 @@ impl Entities {
                             } else {
                                 (cx - vx + period / 2).rem_euclid(period) - period / 2
                             };
-                            if v.sources.is_none()
-                                && (dcx.abs() > reach || (cz - vz).abs() > reach)
+                            if v.sources.is_none() && (dcx.abs() > reach || (cz - vz).abs() > reach)
                             {
                                 cells::drop_cell(v, (cx, cz));
                                 continue;
@@ -2977,14 +2976,20 @@ mod tests {
         let mut c = Clients::new();
         let mut e = state(1024.0 + 3.0);
         c.tick(&mut level, &[&e]);
-        assert!(!c.trackers[0].is_tracking(7), "no period: a lap away is out of range");
+        assert!(
+            !c.trackers[0].is_tracking(7),
+            "no period: a lap away is out of range"
+        );
         level.period_x = 64;
         e.position[0] -= 1.0;
         c.tick(&mut level, &[&e]);
         assert!(c.trackers[0].is_tracking(7) && c.trackers[1].is_tracking(7));
         e.position[0] = 512.0;
         c.tick(&mut level, &[&e]);
-        assert!(!c.trackers[0].is_tracking(7), "half a lap away is far either way");
+        assert!(
+            !c.trackers[0].is_tracking(7),
+            "half a lap away is far either way"
+        );
     }
 
     #[test]

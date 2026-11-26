@@ -151,9 +151,13 @@ mod tests {
     }
     impl LodSampler for Recorder {
         fn request_detail(&mut self, chunks: &[(i32, i32)], center: [i32; 2]) {
-            self.log.lock().unwrap().push(format!("detail {chunks:?} {center:?}"));
+            self.log
+                .lock()
+                .unwrap()
+                .push(format!("detail {chunks:?} {center:?}"));
             let empty = Arc::new(std::array::from_fn(|_| Column::default()));
-            self.details.extend(chunks.iter().map(|&key| (key, empty.clone())));
+            self.details
+                .extend(chunks.iter().map(|&key| (key, empty.clone())));
         }
         fn drain_details(&mut self) -> Vec<LodDetail> {
             std::mem::take(&mut self.details)
@@ -163,14 +167,20 @@ mod tests {
             None
         }
         fn grid(&mut self, x: i32, z: i32, stride: i32, side: usize) -> Vec<Column> {
-            self.log.lock().unwrap().push(format!("grid {x} {z} {stride} {side}"));
+            self.log
+                .lock()
+                .unwrap()
+                .push(format!("grid {x} {z} {stride} {side}"));
             vec![Column::default(); side * side]
         }
     }
     struct RecorderSource(Arc<Mutex<Vec<String>>>);
     impl LodSource for RecorderSource {
         fn sampler(self: Arc<Self>) -> Box<dyn LodSampler> {
-            Box::new(Recorder { log: self.0.clone(), details: Vec::new() })
+            Box::new(Recorder {
+                log: self.0.clone(),
+                details: Vec::new(),
+            })
         }
     }
 
@@ -189,7 +199,11 @@ mod tests {
         let (mut sampler, log) = sampler(64);
         sampler.request_detail(&[(-2, 3), (62, 3), (1, 0)], [-40, 50]);
         assert_eq!(log.lock().unwrap()[0], "detail [(62, 3), (1, 0)] [984, 50]");
-        let mut drawn: Vec<_> = sampler.drain_details().into_iter().map(|(key, _)| key).collect();
+        let mut drawn: Vec<_> = sampler
+            .drain_details()
+            .into_iter()
+            .map(|(key, _)| key)
+            .collect();
         drawn.sort_unstable();
         // Both copies of (62, 3) asked for get it; (1, 0) is drawn where it was asked.
         assert_eq!(drawn, vec![(-2, 3), (1, 0), (62, 3)]);
