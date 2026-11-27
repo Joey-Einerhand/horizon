@@ -482,6 +482,7 @@ impl Game<'_> {
                 pos: [s.x.floor() as i32, s.y.floor() as i32, s.z.floor() as i32],
             }),
             runs_normally: true,
+            period_x: self.world.chunks.period_x().map_or(0, |chunks| chunks * 16),
         }
     }
     /// The local player as `ItemOwner`; `stack` is the stack drawn, to tell
