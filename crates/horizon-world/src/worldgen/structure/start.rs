@@ -1763,7 +1763,26 @@ pub fn beardifier(
     starts: &[Arc<StructureStart>],
     chunk: ChunkPos,
 ) -> Option<Beardifier> {
+    beardifier_across(registry, starts, &[], 0, chunk)
+}
+
+/// [`beardifier`] with `across` too: on a periodic level, the starts of the copy of this chunk
+/// `shift` blocks along X (a period), whose pieces cross the seam into it. They are moved back
+/// by `shift`, so the terrain fits the pieces placed across the seam. Terrain kernels of those
+/// starts are left out.
+pub fn beardifier_across(
+    registry: &StructureRegistry,
+    starts: &[Arc<StructureStart>],
+    across: &[Arc<StructureStart>],
+    shift: i32,
+    chunk: ChunkPos,
+) -> Option<Beardifier> {
     let (bx, bz) = (chunk.x * 16, chunk.z * 16);
+    let moved = |mut b: BoundingBox, dx: i32| {
+        b.min[0] -= dx;
+        b.max[0] -= dx;
+        b
+    };
     let mut rigids = Vec::new();
     let mut junctions = Vec::new();
     let mut any: Option<BoundingBox> = None;
@@ -1773,9 +1792,14 @@ pub fn beardifier(
     };
     let (mut kernel_pieces, mut kernel_junctions) = (Vec::new(), Vec::new());
     let mut kernels: Option<BoundingBox> = None;
-    for start in starts {
+    let all = starts
+        .iter()
+        .map(|start| (start, 0))
+        .chain(across.iter().map(|start| (start, shift)));
+    for (start, dx) in all {
         let def = &registry.structures[start.structure];
         if let Some(enhanced) = &def.enhanced_terrain
+            && dx == 0
             && let Some(b) =
                 enhanced.collect(start, chunk, &mut kernel_pieces, &mut kernel_junctions)
         {
@@ -1790,7 +1814,14 @@ pub fn beardifier(
                 && let Piece::Legacy(legacy) = piece
                 && let Some(rigid) = legacy.beardifier()
             {
-                let b = BoundingBox::new(rigid.bounds.minimum(), rigid.bounds.maximum());
+                let b = moved(
+                    BoundingBox::new(rigid.bounds.minimum(), rigid.bounds.maximum()),
+                    dx,
+                );
+                let rigid = RigidPiece {
+                    bounds: StructureBounds::new(b.min, b.max)?,
+                    ..rigid
+                };
                 if rigid.adjustment != TerrainAdjustment::None
                     && b.max[0] >= bx - 12
                     && b.min[0] <= bx + 15 + 12
@@ -1805,7 +1836,7 @@ pub fn beardifier(
             if adjustment == TerrainAdjustment::None {
                 continue;
             }
-            let b = piece.bounding_box();
+            let b = moved(piece.bounding_box(), dx);
             let near = b.max[0] >= bx - 12
                 && b.min[0] <= bx + 15 + 12
                 && b.max[2] >= bz - 12
@@ -1831,17 +1862,18 @@ pub fn beardifier(
                 include(b, &mut any);
             }
             for j in &pool.junctions {
-                if j.source_x > bx - 12
+                let source_x = j.source_x - dx;
+                if source_x > bx - 12
                     && j.source_z > bz - 12
-                    && j.source_x < bx + 15 + 12
+                    && source_x < bx + 15 + 12
                     && j.source_z < bz + 15 + 12
                 {
                     junctions.push(JigsawJunction {
-                        source_x: j.source_x,
+                        source_x,
                         source_ground_y: j.source_ground_y,
                         source_z: j.source_z,
                     });
-                    let p = [j.source_x, j.source_ground_y, j.source_z];
+                    let p = [source_x, j.source_ground_y, j.source_z];
                     include(BoundingBox::new(p, p), &mut any);
                 }
             }

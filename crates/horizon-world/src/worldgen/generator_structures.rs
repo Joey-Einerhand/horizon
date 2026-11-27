@@ -9,7 +9,7 @@ use super::{
         jigsaw::PoolPiece,
         start::{
             Piece, Rings, StartContext, StructureDef, StructureKind, StructureRegistry,
-            StructureStart, beardifier, create_starts, create_starts_with_saved, may_start,
+            StructureStart, beardifier_across, create_starts, create_starts_with_saved, may_start,
             try_generate,
         },
         stronghold::RingSearch,
@@ -1123,12 +1123,15 @@ impl StructureState {
         }
         out
     }
+    /// `across`: starts of this chunk's copy `shift` blocks along X on a periodic level.
     pub(super) fn beardifier(
         &self,
         references: &[Arc<StructureStart>],
+        across: &[Arc<StructureStart>],
+        shift: i32,
         chunk: ChunkPos,
     ) -> Option<Beardifier> {
-        beardifier(&self.registry, references, chunk)
+        beardifier_across(&self.registry, references, across, shift, chunk)
     }
 }
 
