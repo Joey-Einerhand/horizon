@@ -1227,19 +1227,33 @@ where
         )
         .map_err(stage("noise"))?;
         chunk.set_generation_stage(PreLightChunkStage::Biomes);
-        let (references, own_starts) = match &self.structures {
+        let (references, own_starts, across) = match &self.structures {
             Some(structures) => {
+                let period = worker.period_chunks;
                 let mut queries = StructureQueries {
                     pipeline: self,
                     worker,
                     valid: BTreeSet::new(),
                 };
+                // On a periodic level a chunk next to the seam is also reached by the starts of
+                // its copy a period away (placed there across the seam), which shape its terrain.
+                let across = match period {
+                    p if p > 0 && pos.x < 8 => Some(p),
+                    p if p > 0 && pos.x >= p - 8 => Some(-p),
+                    _ => None,
+                }
+                .map(|dx| {
+                    let copy = ChunkPos::new(pos.x + dx, pos.z);
+                    (structures.references(&mut queries, copy), dx * 16)
+                })
+                .unwrap_or_default();
                 (
                     structures.references(&mut queries, pos),
                     structures.starts_at(&mut queries, pos),
+                    across,
                 )
             }
-            None => (Vec::new(), Starts::default()),
+            None => (Vec::new(), Starts::default(), Default::default()),
         };
         // `FlatLevelSource.buildTerrain`: the layers, and nothing else (no noise, surface or carvers).
         if let Some(flat) = &self.flat {
@@ -1298,7 +1312,7 @@ where
         let beard = self
             .structures
             .as_ref()
-            .and_then(|s| s.beardifier(&references, pos));
+            .and_then(|s| s.beardifier(&references, &across.0, across.1, pos));
         if beard.is_some() || !blender.is_empty() {
             let mut fields = horizon_core::density::WorldFields::default();
             if let Some(beard) = beard {

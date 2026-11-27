@@ -1172,6 +1172,20 @@ pub struct LevelState {
     pub respawn: Option<GlobalPos>,
     /// `tickRateManager().runsNormally()`.
     pub runs_normally: bool,
+    /// The level repeats every this many blocks along X (0: it doesn't). Positions stored in
+    /// items, such as a lodestone compass's target, name the stored copy; a needle points at
+    /// the copy nearest its owner.
+    pub period_x: i32,
+}
+/// The X of the copy of block column `x` nearest `from`, in a level repeating every `period`
+/// blocks (0: `x` itself).
+fn nearest_copy_x(x: i32, from: f64, period: i32) -> f64 {
+    let x = f64::from(x) + 0.5;
+    if period <= 0 {
+        return x;
+    }
+    let p = f64::from(period);
+    x + ((from - x) / p).round() * p
 }
 /// Everything about the surroundings that is not in the stack.
 #[derive(Clone, Debug)]
@@ -2090,7 +2104,7 @@ impl Resolve<'_> {
         let valid = target_pos.as_ref().filter(|t| {
             t.dimension == level.dimension && {
                 let c = [
-                    f64::from(t.pos[0]) + 0.5,
+                    nearest_copy_x(t.pos[0], owner.position[0], level.period_x),
                     f64::from(t.pos[1]) + 0.5,
                     f64::from(t.pos[2]) + 0.5,
                 ];
@@ -2118,7 +2132,7 @@ impl Resolve<'_> {
             return positive_modulo(rotation, 1.0);
         };
         let center = [
-            f64::from(target.pos[0]) + 0.5,
+            nearest_copy_x(target.pos[0], owner.position[0], level.period_x),
             f64::from(target.pos[2]) + 0.5,
         ];
         let angle_to_target = ((center[1] - owner.position[2]).atan2(center[0] - owner.position[0])
@@ -2299,3 +2313,16 @@ mod fluid_container_tests;
 mod foreign_tests;
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod periodic_compass_tests {
+    use super::nearest_copy_x;
+
+    #[test]
+    fn a_needle_points_at_the_copy_nearest_its_owner() {
+        assert_eq!(nearest_copy_x(100, 16494.5, 16384), 16484.5);
+        assert_eq!(nearest_copy_x(100, -16273.5, 16384), -16283.5);
+        assert_eq!(nearest_copy_x(16000, 10.0, 16384), -383.5);
+        assert_eq!(nearest_copy_x(100, 16494.5, 0), 100.5);
+    }
+}
